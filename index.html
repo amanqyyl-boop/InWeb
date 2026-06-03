@@ -1,0 +1,810 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>墨书 - 智能小说阅读平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#6366F1',
+            secondary: '#EC4899',
+            dark: '#1E293B',
+            light: '#F8FAFC'
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    @layer utilities {
+      .novel-content p { @apply my-6 text-lg leading-8 relative; }
+      .comment-box { @apply bg-gray-50 p-3 rounded-lg mb-6 hidden; }
+      .para-comment-btn { @apply text-xs text-primary hover:underline transition cursor-pointer; }
+    }
+    body { font-family: 'Inter', system-ui, -apple-system, sans-serif; }
+    .recommend-card:hover, .ranking-item:hover { @apply bg-gray-50 transition; }
+    .nav-link.active { @apply text-primary font-semibold; }
+    .toast {
+      position: fixed; top: 20px; right: 20px; z-index: 9999;
+      padding: 12px 20px; border-radius: 8px; color: white;
+      font-size: 14px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      opacity: 0; transition: opacity 0.3s, transform 0.3s;
+      transform: translateY(-10px);
+    }
+    .toast.show { opacity: 1; transform: translateY(0); }
+    .toast.success { background: #10B981; }
+    .toast.error { background: #EF4444; }
+    .toast.info { background: #6366F1; }
+  </style>
+</head>
+<body class="bg-light text-dark min-h-screen">
+
+  <!-- ======== Toast 通知 ======== -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ======== 导航栏 ======== -->
+  <header class="sticky top-0 z-50 bg-white shadow-sm">
+    <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="#" onclick="showPage('home');return false;" class="text-2xl font-bold text-primary flex items-center">
+        <i class="fa fa-book mr-2"></i>墨书
+      </a>
+
+      <nav class="hidden md:flex gap-6">
+        <a href="#" data-page="home" class="nav-link font-medium hover:text-primary">首页</a>
+        <a href="#" data-page="ranking" class="nav-link font-medium hover:text-primary">排行榜</a>
+        <a href="#" data-page="upload" class="nav-link font-medium hover:text-primary">上传小说</a>
+        <a href="#" data-page="history" class="nav-link font-medium hover:text-primary">阅读记录</a>
+      </nav>
+
+      <div class="flex gap-2 items-center">
+        <span id="userDisplay" class="hidden text-sm text-gray-600 mr-2">
+          <i class="fa fa-user-circle mr-1"></i><span id="usernameDisplay"></span>
+        </span>
+        <button id="loginBtn" class="px-4 py-2 rounded-lg border border-primary text-primary hover:bg-primary/5 text-sm">
+          <i class="fa fa-sign-in mr-1"></i>登录
+        </button>
+        <button id="logoutBtn" class="hidden px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm">
+          <i class="fa fa-sign-out"></i>
+        </button>
+      </div>
+
+      <button class="md:hidden text-xl" id="menuBtn"><i class="fa fa-bars"></i></button>
+    </div>
+  </header>
+
+  <!-- ======== 主内容区 ======== -->
+  <main class="container mx-auto px-4 py-8">
+
+    <!-- 首页 -->
+    <section id="page-home" class="block">
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="md:col-span-2">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">最新小说</h2>
+            <select id="categoryFilter" class="text-sm border rounded-lg px-3 py-1.5" onchange="loadNovels()">
+              <option value="全部">全部分类</option>
+              <option value="玄幻">玄幻</option>
+              <option value="都市">都市</option>
+              <option value="言情">言情</option>
+              <option value="科幻">科幻</option>
+              <option value="悬疑">悬疑</option>
+            </select>
+          </div>
+          <div id="novelList" class="grid gap-4">
+            <div class="text-center py-12 text-gray-500"><i class="fa fa-spinner fa-spin mr-2"></i>加载中...</div>
+          </div>
+        </div>
+
+        <div class="space-y-6">
+          <div class="bg-white rounded-xl shadow-sm p-5">
+            <h3 class="font-bold text-lg mb-3 flex items-center">
+              <i class="fa fa-trophy text-yellow-500 mr-2"></i>本周热门
+            </h3>
+            <div id="rankingSide" class="space-y-2">
+              <div class="text-sm text-gray-500"><i class="fa fa-spinner fa-spin mr-1"></i>加载中...</div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl shadow-sm p-5">
+            <h3 class="font-bold text-lg mb-3 flex items-center">
+              <i class="fa fa-lightbulb-o text-primary mr-2"></i>为你推荐
+            </h3>
+            <div id="recommendSide" class="space-y-2">
+              <div class="text-sm text-gray-500"><i class="fa fa-spinner fa-spin mr-1"></i>加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 阅读页 -->
+    <section id="page-read" class="hidden">
+      <button onclick="goBack()" class="mb-4 px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm">
+        <i class="fa fa-arrow-left mr-1"></i>返回
+      </button>
+      <div class="bg-white rounded-xl shadow-sm p-6 md:p-8">
+        <h1 id="readTitle" class="text-2xl md:text-3xl font-bold mb-2"></h1>
+        <p id="readMeta" class="text-gray-500 mb-6"></p>
+        <div id="readContent" class="novel-content text-gray-800"></div>
+      </div>
+    </section>
+
+    <!-- 上传小说 -->
+    <section id="page-upload" class="hidden max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-6">上传小说</h2>
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <form id="uploadForm" class="space-y-4">
+          <div>
+            <label class="block mb-2 font-medium">小说标题 <span class="text-red-500">*</span></label>
+            <input type="text" id="novelTitle" required
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+          </div>
+          <div>
+            <label class="block mb-2 font-medium">小说分类</label>
+            <select id="novelCategory"
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+              <option>玄幻</option><option>都市</option><option>言情</option><option>科幻</option><option>悬疑</option>
+            </select>
+          </div>
+          <div>
+            <label class="block mb-2 font-medium">封面链接（选填）</label>
+            <input type="url" id="novelCover"
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              placeholder="留空则自动生成封面">
+          </div>
+          <div>
+            <label class="block mb-2 font-medium">小说内容 <span class="text-red-500">*</span></label>
+            <p class="text-xs text-gray-400 mb-2">每段请换行输入，系统将自动为每段生成独立评论功能</p>
+            <textarea id="novelContent" rows="12" required
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              placeholder="第一段内容&#10;&#10;第二段内容（每段之间空一行）&#10;&#10;第三段内容..."></textarea>
+          </div>
+          <button type="submit" class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium">
+            <i class="fa fa-upload mr-2"></i>发布小说
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 排行榜 -->
+    <section id="page-ranking" class="hidden">
+      <h2 class="text-2xl font-bold mb-6">小说排行榜</h2>
+      <div class="flex gap-3 mb-4">
+        <button onclick="switchRanking('weekly')" id="rankWeeklyBtn"
+          class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium">本周排行</button>
+        <button onclick="switchRanking('all')" id="rankAllBtn"
+          class="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200">总排行</button>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div id="fullRanking" class="space-y-1">
+          <div class="text-center py-12 text-gray-500"><i class="fa fa-spinner fa-spin mr-2"></i>加载中...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 阅读记录 -->
+    <section id="page-history" class="hidden">
+      <h2 class="text-2xl font-bold mb-6">我的阅读记录</h2>
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div id="historyList" class="space-y-2">
+          <div class="text-center py-12 text-gray-500"><i class="fa fa-spinner fa-spin mr-2"></i>加载中...</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======== 登录模态框 ======== -->
+  <div id="loginModal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-sm mx-4 p-6 relative">
+      <button onclick="closeModal('loginModal')" class="absolute top-4 right-4 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+      <h3 class="font-bold text-xl mb-6 text-center">
+        <i class="fa fa-sign-in text-primary mr-2"></i>用户登录
+      </h3>
+      <form id="loginForm" class="space-y-4">
+        <div>
+          <label class="block mb-1 text-sm font-medium">用户名</label>
+          <input type="text" id="loginUsername" required
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm font-medium">密码</label>
+          <input type="password" id="loginPassword" required
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary/90">
+          登 录
+        </button>
+      </form>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        还没有账号？
+        <a href="#" onclick="switchAuthModal('register')" class="text-primary hover:underline">立即注册</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ======== 注册模态框 ======== -->
+  <div id="registerModal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-sm mx-4 p-6 relative">
+      <button onclick="closeModal('registerModal')" class="absolute top-4 right-4 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+      <h3 class="font-bold text-xl mb-6 text-center">
+        <i class="fa fa-user-plus text-primary mr-2"></i>用户注册
+      </h3>
+      <form id="registerForm" class="space-y-4">
+        <div>
+          <label class="block mb-1 text-sm font-medium">用户名</label>
+          <input type="text" id="regUsername" required minlength="2" maxlength="20"
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+            placeholder="2-20个字符">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm font-medium">密码</label>
+          <input type="password" id="regPassword" required minlength="4"
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+            placeholder="至少4位">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm font-medium">确认密码</label>
+          <input type="password" id="regPassword2" required
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary/90">
+          注 册
+        </button>
+      </form>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        已有账号？
+        <a href="#" onclick="switchAuthModal('login')" class="text-primary hover:underline">立即登录</a>
+      </p>
+    </div>
+  </div>
+</body>
+
+<script>
+// ================================================================
+//  API 配置
+// ================================================================
+const API_BASE = 'http://localhost:3000/api';
+
+// ================================================================
+//  Toast 通知
+// ================================================================
+function showToast(msg, type = 'info') {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + type + ' show';
+  clearTimeout(t._timer);
+  t._timer = setTimeout(() => t.classList.remove('show'), 3000);
+}
+
+// ================================================================
+//  Token 管理
+// ================================================================
+function getToken() { return localStorage.getItem('token'); }
+function getCurrentUser() {
+  const u = localStorage.getItem('currentUser');
+  return u ? JSON.parse(u) : null;
+}
+
+function saveAuth(user, token) {
+  localStorage.setItem('token', token);
+  localStorage.setItem('currentUser', JSON.stringify(user));
+  updateUserUI();
+}
+
+function clearAuth() {
+  localStorage.removeItem('token');
+  localStorage.removeItem('currentUser');
+  updateUserUI();
+}
+
+function updateUserUI() {
+  const user = getCurrentUser();
+  const loginBtn = document.getElementById('loginBtn');
+  const logoutBtn = document.getElementById('logoutBtn');
+  const userDisplay = document.getElementById('userDisplay');
+  const nameSpan = document.getElementById('usernameDisplay');
+
+  if (user) {
+    loginBtn.classList.add('hidden');
+    logoutBtn.classList.remove('hidden');
+    userDisplay.classList.remove('hidden');
+    nameSpan.textContent = user.username;
+  } else {
+    loginBtn.classList.remove('hidden');
+    logoutBtn.classList.add('hidden');
+    userDisplay.classList.add('hidden');
+  }
+}
+
+// ================================================================
+//  API 通用请求
+// ================================================================
+async function api(path, options = {}) {
+  const token = getToken();
+  const headers = { 'Content-Type': 'application/json', ...options.headers };
+  if (token) headers['Authorization'] = 'Bearer ' + token;
+
+  const res = await fetch(API_BASE + path, { ...options, headers });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || '请求失败');
+  return data;
+}
+
+// ================================================================
+//  页面切换
+// ================================================================
+let currentPage = 'home';
+
+function showPage(pageId) {
+  document.querySelectorAll('section[id^="page-"]').forEach(s => s.classList.add('hidden'));
+  const page = document.getElementById('page-' + pageId);
+  if (page) page.classList.remove('hidden');
+
+  document.querySelectorAll('.nav-link').forEach(a => a.classList.remove('active'));
+  document.querySelectorAll(`.nav-link[data-page="${pageId}"]`).forEach(a => a.classList.add('active'));
+
+  currentPage = pageId;
+}
+
+function goBack() { showPage('home'); }
+
+document.querySelectorAll('.nav-link').forEach(link => {
+  link.addEventListener('click', e => {
+    e.preventDefault();
+    const page = link.dataset.page;
+    showPage(page);
+    // 进入页面时刷新数据
+    if (page === 'home') { loadNovels(); loadRanking(); loadRecommend(); }
+    if (page === 'ranking') loadFullRanking('weekly');
+    if (page === 'history') loadHistory();
+  });
+});
+
+// ================================================================
+//  模态框控制
+// ================================================================
+function openModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function switchAuthModal(type) {
+  closeModal('loginModal');
+  closeModal('registerModal');
+  if (type === 'login') openModal('loginModal');
+  else openModal('registerModal');
+}
+
+// 点击蒙层关闭
+document.querySelectorAll('.fixed.inset-0').forEach(el => {
+  el.addEventListener('click', e => {
+    if (e.target === el) el.classList.add('hidden');
+  });
+});
+
+// ================================================================
+//  登录 / 注销
+// ================================================================
+document.getElementById('loginBtn').addEventListener('click', () => openModal('loginModal'));
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+  clearAuth();
+  showToast('已退出登录', 'info');
+  loadRecommend(); // 刷新推荐
+  loadRanking();
+});
+
+// 登录表单
+document.getElementById('loginForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const username = document.getElementById('loginUsername').value;
+  const password = document.getElementById('loginPassword').value;
+
+  try {
+    const data = await api('/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    });
+    saveAuth(data.user, data.token);
+    closeModal('loginModal');
+    showToast('欢迎回来，' + username + '！', 'success');
+    document.getElementById('loginForm').reset();
+    loadRecommend();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+// 注册表单
+document.getElementById('registerForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const username = document.getElementById('regUsername').value;
+  const password = document.getElementById('regPassword').value;
+  const password2 = document.getElementById('regPassword2').value;
+
+  if (password !== password2) {
+    showToast('两次密码输入不一致', 'error');
+    return;
+  }
+
+  try {
+    const data = await api('/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password })
+    });
+    saveAuth(data.user, data.token);
+    closeModal('registerModal');
+    showToast('注册成功，欢迎你，' + username + '！', 'success');
+    document.getElementById('registerForm').reset();
+    loadRecommend();
+  } catch (err) {
+    showToast(err.message, 'error');
+  }
+});
+
+// ================================================================
+//  加载小说列表
+// ================================================================
+async function loadNovels() {
+  const container = document.getElementById('novelList');
+  const category = document.getElementById('categoryFilter').value;
+
+  try {
+    const url = '/novels?limit=50' + (category !== '全部' ? '&category=' + category : '');
+    const data = await api(url);
+
+    if (data.novels.length === 0) {
+      container.innerHTML = '<div class="text-center py-12 text-gray-500"><i class="fa fa-book-open mr-2"></i>暂无小说，快去上传吧！</div>';
+      return;
+    }
+
+    container.innerHTML = data.novels.map(n => `
+      <div class="bg-white rounded-xl shadow-sm overflow-hidden flex hover:shadow-md transition cursor-pointer" onclick="readNovel(${n.id})">
+        <img src="${n.cover}" class="w-24 h-32 object-cover flex-shrink-0" alt="${n.title}"
+          onerror="this.src='https://via.placeholder.com/200x280/e2e8f0/94a3b8?text=${encodeURIComponent(n.title.substring(0,2))}'">
+        <div class="p-4 flex-1 flex flex-col justify-between">
+          <div>
+            <h3 class="font-bold text-lg">${n.title}</h3>
+            <div class="flex gap-2 text-xs text-gray-400 mt-1">
+              <span class="bg-primary/10 text-primary px-2 py-0.5 rounded">${n.category}</span>
+              <span>👤 ${n.author}</span>
+            </div>
+            <p class="text-sm text-gray-500 mt-2">
+              <i class="fa fa-eye mr-1"></i>${n.views} 阅读
+              <span class="mx-2">·</span>
+              <i class="fa fa-calendar mr-1"></i>${n.created_at || ''}
+            </p>
+          </div>
+          <div class="text-primary text-sm hover:underline">开始阅读 <i class="fa fa-arrow-right ml-1"></i></div>
+        </div>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="text-center py-12 text-red-400">加载失败：' + err.message + '</div>';
+  }
+}
+
+// ================================================================
+//  阅读小说
+// ================================================================
+async function readNovel(id) {
+  try {
+    // 先记录阅读
+    await api('/novels/' + id + '/read', { method: 'POST' }).catch(() => {});
+
+    const data = await api('/novels/' + id);
+
+    document.getElementById('readTitle').textContent = data.title;
+    document.getElementById('readMeta').textContent =
+      data.category + ' | 作者：' + data.author + ' | 阅读量：' + data.views;
+
+    let html = '';
+    data.paragraphs.forEach(p => {
+      const paraComments = p.comments || [];
+      html += `
+        <div class="relative">
+          <p class="text-lg leading-8 my-6">${p.text}</p>
+          <div class="flex items-center gap-3 mb-1">
+            <span class="para-comment-btn" onclick="toggleComment(${data.id}, ${p.index})">
+              <i class="fa fa-comment-o mr-1"></i>评论（${paraComments.length}）
+            </span>
+            <span class="text-xs text-gray-400">段落 ${p.index + 1}</span>
+          </div>
+          <div id="comment-box-${data.id}-${p.index}" class="comment-box">
+            <div class="mb-2 max-h-40 overflow-y-auto text-sm space-y-2" id="comment-list-${data.id}-${p.index}">
+              ${paraComments.map(c => `
+                <div class="border-b border-gray-200 pb-2">
+                  <div class="flex items-center gap-2 mb-0.5">
+                    <span class="font-medium text-sm">${c.username}</span>
+                    <span class="text-xs text-gray-400">${c.created_at || ''}</span>
+                  </div>
+                  <p class="text-gray-700 text-sm">${c.content}</p>
+                </div>
+              `).join('')}
+              ${paraComments.length === 0 ? '<p class="text-gray-400 text-xs">暂无评论，来说点什么吧</p>' : ''}
+            </div>
+            <div class="flex gap-2">
+              <input type="text" id="comment-input-${data.id}-${p.index}"
+                placeholder="写下你的评论..." class="flex-1 text-sm px-3 py-1.5 border rounded-lg outline-none focus:border-primary">
+              <button onclick="postComment(${data.id}, ${p.index})"
+                class="bg-primary text-white px-3 py-1.5 rounded-lg text-sm hover:bg-primary/90 transition">发送</button>
+            </div>
+          </div>
+        </div>
+        <hr class="border-gray-100">
+      `;
+    });
+
+    document.getElementById('readContent').innerHTML = html;
+    showPage('read');
+  } catch (err) {
+    showToast('加载失败：' + err.message, 'error');
+  }
+}
+
+// ================================================================
+//  评论功能
+// ================================================================
+function toggleComment(novelId, paraId) {
+  const box = document.getElementById(`comment-box-${novelId}-${paraId}`);
+  if (box) box.classList.toggle('hidden');
+}
+
+async function postComment(novelId, paraId) {
+  const user = getCurrentUser();
+  if (!user) {
+    showToast('请先登录后再评论', 'error');
+    openModal('loginModal');
+    return;
+  }
+
+  const input = document.getElementById(`comment-input-${novelId}-${paraId}`);
+  const text = input.value.trim();
+  if (!text) return;
+
+  try {
+    await api('/novels/' + novelId + '/comments', {
+      method: 'POST',
+      body: JSON.stringify({ paragraph_index: paraId, content: text })
+    });
+    input.value = '';
+    showToast('评论成功', 'success');
+    readNovel(novelId); // 刷新页面
+  } catch (err) {
+    showToast('评论失败：' + err.message, 'error');
+  }
+}
+
+// ================================================================
+//  排行榜
+// ================================================================
+let rankingType = 'weekly';
+
+async function loadRanking() {
+  try {
+    const data = await api('/ranking?type=weekly');
+    const side = document.getElementById('rankingSide');
+
+    if (data.length === 0) {
+      side.innerHTML = '<p class="text-sm text-gray-400">暂无数据</p>';
+      return;
+    }
+
+    const medals = ['🥇', '🥈', '🥉'];
+    side.innerHTML = data.slice(0, 5).map((n, i) => `
+      <div class="ranking-item flex items-center gap-2 p-1.5 rounded-lg cursor-pointer" onclick="readNovel(${n.id})">
+        <span class="w-6 h-6 rounded-full ${i < 3 ? 'bg-primary' : 'bg-gray-100'} text-white text-xs flex items-center justify-center flex-shrink-0 font-bold">
+          ${i < 3 ? medals[i] : (i + 1)}
+        </span>
+        <p class="truncate flex-1 text-sm font-medium">${n.title}</p>
+        <span class="text-xs text-gray-500 flex-shrink-0">${n.weekly_views || 0} 次</span>
+      </div>
+    `).join('');
+  } catch {
+    document.getElementById('rankingSide').innerHTML = '<p class="text-sm text-red-400">加载失败</p>';
+  }
+}
+
+async function loadFullRanking(type) {
+  rankingType = type;
+  const container = document.getElementById('fullRanking');
+  const weeklyBtn = document.getElementById('rankWeeklyBtn');
+  const allBtn = document.getElementById('rankAllBtn');
+
+  weeklyBtn.className = type === 'weekly'
+    ? 'px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium'
+    : 'px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200';
+  allBtn.className = type === 'all'
+    ? 'px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium'
+    : 'px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200';
+
+  try {
+    const data = await api('/ranking?type=' + type);
+    const medals = ['🥇', '🥈', '🥉'];
+
+    if (data.length === 0) {
+      container.innerHTML = '<div class="text-center py-12 text-gray-500">暂无数据</div>';
+      return;
+    }
+
+    container.innerHTML = data.map((n, i) => {
+      const viewCount = type === 'weekly' ? (n.weekly_views || 0) : n.views;
+      return `
+      <div class="ranking-item flex items-center p-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg"
+        onclick="readNovel(${n.id})">
+        <span class="w-8 h-8 rounded-full ${i < 3 ? 'bg-primary' : 'bg-gray-100'} text-white text-sm flex items-center justify-center mr-3 font-bold flex-shrink-0">
+          ${i < 3 ? medals[i] : (i + 1)}
+        </span>
+        <div class="flex-1 min-w-0">
+          <p class="font-medium truncate">${n.title}</p>
+          <p class="text-sm text-gray-500">${n.category} · ${n.author}</p>
+        </div>
+        <span class="text-primary font-medium flex-shrink-0 ml-2">${viewCount} 阅读</span>
+      </div>`;
+    }).join('');
+  } catch {
+    container.innerHTML = '<div class="text-center py-12 text-red-400">加载失败</div>';
+  }
+}
+
+function switchRanking(type) {
+  loadFullRanking(type);
+}
+
+// ================================================================
+//  智能推荐
+// ================================================================
+async function loadRecommend() {
+  const container = document.getElementById('recommendSide');
+  const user = getCurrentUser();
+
+  if (!user) {
+    container.innerHTML = `
+      <p class="text-sm text-gray-400 mb-2">登录后获取个性化推荐</p>
+      <button onclick="openModal('loginModal')" class="text-primary text-sm hover:underline">
+        <i class="fa fa-sign-in mr-1"></i>立即登录
+      </button>
+    `;
+    return;
+  }
+
+  try {
+    const data = await api('/recommend');
+    if (data.recommends.length === 0) {
+      container.innerHTML = '<p class="text-sm text-gray-400">暂无更多推荐</p>';
+      return;
+    }
+
+    container.innerHTML = `
+      <p class="text-xs text-gray-400 mb-2">${data.reason}</p>
+      ${data.recommends.map(n => `
+        <div class="recommend-card p-2 rounded-lg cursor-pointer" onclick="readNovel(${n.id})">
+          <p class="text-sm font-medium hover:text-primary transition truncate">${n.title}</p>
+          <p class="text-xs text-gray-400">${n.category} · ${n.views} 阅读</p>
+        </div>
+      `).join('')}
+    `;
+  } catch {
+    container.innerHTML = '<p class="text-sm text-red-400">推荐加载失败</p>';
+  }
+}
+
+// ================================================================
+//  阅读历史
+// ================================================================
+async function loadHistory() {
+  const container = document.getElementById('historyList');
+  const user = getCurrentUser();
+
+  if (!user) {
+    container.innerHTML = `
+      <div class="text-center py-12">
+        <i class="fa fa-history text-4xl text-gray-300 mb-3 block"></i>
+        <p class="text-gray-500 mb-2">登录后查看阅读记录</p>
+        <button onclick="openModal('loginModal')" class="text-primary hover:underline">
+          <i class="fa fa-sign-in mr-1"></i>立即登录
+        </button>
+      </div>
+    `;
+    return;
+  }
+
+  try {
+    const data = await api('/history');
+    if (data.length === 0) {
+      container.innerHTML = `
+        <div class="text-center py-12 text-gray-400">
+          <i class="fa fa-book-open text-4xl mb-3 block"></i>
+          还没有阅读记录，去首页看看吧
+        </div>
+      `;
+      return;
+    }
+
+    container.innerHTML = data.map(n => `
+      <div class="flex items-center p-3 border-b border-gray-100 last:border-0 cursor-pointer hover:bg-gray-50 rounded-lg"
+        onclick="readNovel(${n.id})">
+        <img src="${n.cover}" class="w-12 h-16 object-cover rounded flex-shrink-0 mr-3" alt=""
+          onerror="this.style.display='none'">
+        <div class="flex-1 min-w-0">
+          <p class="font-medium truncate">${n.title}</p>
+          <p class="text-sm text-gray-400">${n.category}</p>
+          <p class="text-xs text-gray-400">
+            <i class="fa fa-clock-o mr-1"></i>上次阅读：${n.last_read_at || ''}
+          </p>
+        </div>
+        <span class="text-primary text-sm hover:underline flex-shrink-0">
+          继续阅读 <i class="fa fa-arrow-right ml-1"></i>
+        </span>
+      </div>
+    `).join('');
+  } catch (err) {
+    container.innerHTML = '<div class="text-center py-12 text-red-400">加载失败：' + err.message + '</div>';
+  }
+}
+
+// ================================================================
+//  上传小说
+// ================================================================
+document.getElementById('uploadForm').addEventListener('submit', async e => {
+  e.preventDefault();
+
+  const user = getCurrentUser();
+  if (!user) {
+    showToast('请先登录再上传小说', 'error');
+    openModal('loginModal');
+    return;
+  }
+
+  const title = document.getElementById('novelTitle').value;
+  const category = document.getElementById('novelCategory').value;
+  const cover = document.getElementById('novelCover').value;
+  const content = document.getElementById('novelContent').value;
+
+  try {
+    await api('/novels', {
+      method: 'POST',
+      body: JSON.stringify({ title, category, cover, content })
+    });
+
+    document.getElementById('uploadForm').reset();
+    showToast('小说《' + title + '》上传成功！', 'success');
+    showPage('home');
+    loadNovels();
+  } catch (err) {
+    showToast('上传失败：' + err.message, 'error');
+  }
+});
+
+// ================================================================
+//  Enter 键提交评论
+// ================================================================
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter' && e.target.id && e.target.id.startsWith('comment-input-')) {
+    const parts = e.target.id.split('-');
+    const novelId = parseInt(parts[2]);
+    const paraId = parseInt(parts[3]);
+    postComment(novelId, paraId);
+  }
+});
+
+// ================================================================
+//  初始化
+// ================================================================
+async function init() {
+  updateUserUI();
+  await Promise.all([
+    loadNovels(),
+    loadRanking(),
+    loadRecommend()
+  ]);
+}
+
+window.onload = init;
+</script>
+</html>
