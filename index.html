@@ -1,6 +1,233 @@
 <!DOCTYPE html>
-<html>
-<body>
-  <h1>我的网站</h1>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>墨书 - 智能小说阅读平台</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://cdn.jsdelivr.net/npm/font-awesome@4.7.0/css/font-awesome.min.css" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body class="bg-light text-dark min-h-screen">
+
+  <!-- ======== Toast 通知 ======== -->
+  <div id="toast" class="toast"></div>
+
+  <!-- ======== 导航栏 ======== -->
+  <header class="sticky top-0 z-50 bg-white shadow-sm">
+    <div class="container mx-auto px-4 py-3 flex items-center justify-between">
+      <a href="#" onclick="showPage('home');return false;" class="text-2xl font-bold text-primary flex items-center">
+        <i class="fa fa-book mr-2"></i>墨书
+      </a>
+
+      <nav class="hidden md:flex gap-6">
+        <a href="#" data-page="home" class="nav-link font-medium hover:text-primary">首页</a>
+        <a href="#" data-page="ranking" class="nav-link font-medium hover:text-primary">排行榜</a>
+        <a href="#" data-page="upload" class="nav-link font-medium hover:text-primary">上传小说</a>
+        <a href="#" data-page="history" class="nav-link font-medium hover:text-primary">阅读记录</a>
+      </nav>
+
+      <div class="flex gap-2 items-center">
+        <span id="userDisplay" class="hidden text-sm text-gray-600 mr-2">
+          <i class="fa fa-user-circle mr-1"></i><span id="usernameDisplay"></span>
+        </span>
+        <button id="loginBtn" class="px-4 py-2 rounded-lg border border-primary text-primary hover:bg-primary/5 text-sm">
+          <i class="fa fa-sign-in mr-1"></i>登录
+        </button>
+        <button id="logoutBtn" class="hidden px-3 py-2 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 text-sm">
+          <i class="fa fa-sign-out"></i>
+        </button>
+      </div>
+
+      <button class="md:hidden text-xl" id="menuBtn"><i class="fa fa-bars"></i></button>
+    </div>
+  </header>
+
+  <!-- ======== 主内容区 ======== -->
+  <main class="container mx-auto px-4 py-8">
+
+    <!-- 首页 -->
+    <section id="page-home" class="block">
+      <div class="grid md:grid-cols-3 gap-6">
+        <div class="md:col-span-2">
+          <div class="flex items-center justify-between mb-4">
+            <h2 class="text-xl font-bold">最新小说</h2>
+            <select id="categoryFilter" class="text-sm border rounded-lg px-3 py-1.5" onchange="loadNovels()">
+              <option value="全部">全部分类</option>
+              <option value="玄幻">玄幻</option>
+              <option value="都市">都市</option>
+              <option value="言情">言情</option>
+              <option value="科幻">科幻</option>
+              <option value="悬疑">悬疑</option>
+            </select>
+          </div>
+          <div id="novelList" class="grid gap-4">
+            <div class="text-center py-12 text-gray-500"><i class="fa fa-spinner fa-spin mr-2"></i>加载中...</div>
+          </div>
+        </div>
+
+        <div class="space-y-6">
+          <div class="bg-white rounded-xl shadow-sm p-5">
+            <h3 class="font-bold text-lg mb-3 flex items-center">
+              <i class="fa fa-trophy text-yellow-500 mr-2"></i>本周热门
+            </h3>
+            <div id="rankingSide" class="space-y-2">
+              <div class="text-sm text-gray-500"><i class="fa fa-spinner fa-spin mr-1"></i>加载中...</div>
+            </div>
+          </div>
+
+          <div class="bg-white rounded-xl shadow-sm p-5">
+            <h3 class="font-bold text-lg mb-3 flex items-center">
+              <i class="fa fa-lightbulb-o text-primary mr-2"></i>为你推荐
+            </h3>
+            <div id="recommendSide" class="space-y-2">
+              <div class="text-sm text-gray-500"><i class="fa fa-spinner fa-spin mr-1"></i>加载中...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 阅读页 -->
+    <section id="page-read" class="hidden">
+      <button onclick="goBack()" class="mb-4 px-3 py-2 bg-gray-100 rounded-lg hover:bg-gray-200 text-sm">
+        <i class="fa fa-arrow-left mr-1"></i>返回
+      </button>
+      <div class="bg-white rounded-xl shadow-sm p-6 md:p-8">
+        <h1 id="readTitle" class="text-2xl md:text-3xl font-bold mb-2"></h1>
+        <p id="readMeta" class="text-gray-500 mb-6"></p>
+        <div id="readContent" class="novel-content text-gray-800"></div>
+      </div>
+    </section>
+
+    <!-- 上传小说 -->
+    <section id="page-upload" class="hidden max-w-2xl mx-auto">
+      <h2 class="text-2xl font-bold mb-6">上传小说</h2>
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <form id="uploadForm" class="space-y-4">
+          <div>
+            <label class="block mb-2 font-medium">小说标题 <span class="text-red-500">*</span></label>
+            <input type="text" id="novelTitle" required
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+          </div>
+          <div>
+            <label class="block mb-2 font-medium">小说分类</label>
+            <select id="novelCategory"
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+              <option>玄幻</option><option>都市</option><option>言情</option><option>科幻</option><option>悬疑</option>
+            </select>
+          </div>
+          <div>
+            <label class="block mb-2 font-medium">封面链接（选填）</label>
+            <input type="url" id="novelCover"
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              placeholder="留空则自动生成封面">
+          </div>
+          <div>
+            <label class="block mb-2 font-medium">小说内容 <span class="text-red-500">*</span></label>
+            <p class="text-xs text-gray-400 mb-2">每段请换行输入，系统将自动为每段生成独立评论功能</p>
+            <textarea id="novelContent" rows="12" required
+              class="w-full px-4 py-2 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+              placeholder="第一段内容&#10;&#10;第二段内容（每段之间空一行）&#10;&#10;第三段内容..."></textarea>
+          </div>
+          <button type="submit" class="w-full py-3 bg-primary text-white rounded-lg hover:bg-primary/90 font-medium">
+            <i class="fa fa-upload mr-2"></i>发布小说
+          </button>
+        </form>
+      </div>
+    </section>
+
+    <!-- 排行榜 -->
+    <section id="page-ranking" class="hidden">
+      <h2 class="text-2xl font-bold mb-6">小说排行榜</h2>
+      <div class="flex gap-3 mb-4">
+        <button onclick="switchRanking('weekly')" id="rankWeeklyBtn"
+          class="px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium">本周排行</button>
+        <button onclick="switchRanking('all')" id="rankAllBtn"
+          class="px-4 py-2 rounded-lg bg-gray-100 text-gray-600 text-sm font-medium hover:bg-gray-200">总排行</button>
+      </div>
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div id="fullRanking" class="space-y-1">
+          <div class="text-center py-12 text-gray-500"><i class="fa fa-spinner fa-spin mr-2"></i>加载中...</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 阅读记录 -->
+    <section id="page-history" class="hidden">
+      <h2 class="text-2xl font-bold mb-6">我的阅读记录</h2>
+      <div class="bg-white rounded-xl shadow-sm p-6">
+        <div id="historyList" class="space-y-2">
+          <div class="text-center py-12 text-gray-500"><i class="fa fa-spinner fa-spin mr-2"></i>加载中...</div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- ======== 登录模态框 ======== -->
+  <div id="loginModal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-sm mx-4 p-6 relative">
+      <button onclick="closeModal('loginModal')" class="absolute top-4 right-4 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+      <h3 class="font-bold text-xl mb-6 text-center">
+        <i class="fa fa-sign-in text-primary mr-2"></i>用户登录
+      </h3>
+      <form id="loginForm" class="space-y-4">
+        <div>
+          <label class="block mb-1 text-sm font-medium">用户名</label>
+          <input type="text" id="loginUsername" required
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm font-medium">密码</label>
+          <input type="password" id="loginPassword" required
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary/90">
+          登 录
+        </button>
+      </form>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        还没有账号？
+        <a href="#" onclick="switchAuthModal('register')" class="text-primary hover:underline">立即注册</a>
+      </p>
+    </div>
+  </div>
+
+  <!-- ======== 注册模态框 ======== -->
+  <div id="registerModal" class="fixed inset-0 bg-black/50 hidden flex items-center justify-center z-50">
+    <div class="bg-white rounded-xl w-full max-w-sm mx-4 p-6 relative">
+      <button onclick="closeModal('registerModal')" class="absolute top-4 right-4 text-2xl text-gray-400 hover:text-gray-600">&times;</button>
+      <h3 class="font-bold text-xl mb-6 text-center">
+        <i class="fa fa-user-plus text-primary mr-2"></i>用户注册
+      </h3>
+      <form id="registerForm" class="space-y-4">
+        <div>
+          <label class="block mb-1 text-sm font-medium">用户名</label>
+          <input type="text" id="regUsername" required minlength="2" maxlength="20"
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+            placeholder="2-20个字符">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm font-medium">密码</label>
+          <input type="password" id="regPassword" required minlength="4"
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none"
+            placeholder="至少4位">
+        </div>
+        <div>
+          <label class="block mb-1 text-sm font-medium">确认密码</label>
+          <input type="password" id="regPassword2" required
+            class="w-full px-4 py-2.5 border rounded-lg focus:border-primary focus:ring-1 focus:ring-primary outline-none">
+        </div>
+        <button type="submit" class="w-full py-2.5 bg-primary text-white rounded-lg font-medium hover:bg-primary/90">
+          注 册
+        </button>
+      </form>
+      <p class="text-center text-sm text-gray-500 mt-4">
+        已有账号？
+        <a href="#" onclick="switchAuthModal('login')" class="text-primary hover:underline">立即登录</a>
+      </p>
+    </div>
+  </div>
+  <script src="script.js"></script>
 </body>
 </html>
