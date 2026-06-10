@@ -58,6 +58,7 @@ const searchInput     = $('#searchInput');
 const heroSearchInput = $('#heroSearchInput');
 const searchBtn       = $('#searchBtn');
 const heroSearchBtn   = $('#heroSearchBtn');
+const uploadBtn       = $('#uploadBtn');
 const themeToggle     = $('#themeToggle');
 const backTop         = $('#backTop');
 const mobileMenuBtn   = $('#mobileMenuBtn');
@@ -182,7 +183,7 @@ async function loadNovels(category = 'all', sort = 'hot') {
 async function loadRecommend() {
   if (!state.currentUser) return;
   const recs = await api(`/recommend/${state.currentUser.id}`);
-  renderGrid(recommendGrid, recs, true);
+  renderGrid(recommendGrid, recs.slice(0, 10), true);
 }
 
 // ==========================================
@@ -257,14 +258,12 @@ function renderHome() {
     loadNovels(state.categoryFilter, 'hot'),
     loadNovels(state.categoryFilter, 'rating')
   ]).then(([hot, top]) => {
-    renderGrid(hotGrid, hot.slice(0, 6));
-    renderGrid(topGrid, top.slice(0, 6));
+    renderGrid(hotGrid, hot.slice(0, 5));
+    renderGrid(topGrid, top.slice(0, 5));
   });
 
-  if (state.currentUser) {
+  if (state.currentUser && state.categoryFilter === 'all') {
     recommendSection.style.display = 'block';
-    const prefs = state.currentUser.preferences || [];
-    recommendTags.innerHTML = prefs.map(p => `<span>${p}</span>`).join('');
     loadRecommend();
   } else {
     recommendSection.style.display = 'none';
@@ -442,30 +441,26 @@ function openReader(id, idx) {
 }
 
 function renderReader() {
-  api(`/novels/${state.currentNovelId}`).then(novel => {
+  const nid = state.currentNovelId;
+  const idx = state.currentChapterIndex;
+
+  api(`/novels/${nid}`).then(novel => {
     if (!novel) return;
-
-    const idx    = state.currentChapterIndex;
-    const title  = novel.chapters[idx] || '未知章节';
-
-    readerChapterTitle.textContent = title;
     readerChInfo.textContent = `${idx + 1} / ${novel.chapters.length}`;
-
-    const paragraphs = [
-      `${novel.title} · ${title}`,
-      novel.desc,
-      '『湾区书屋 · GBU』为您呈现精彩内容。',
-      '窗外细雨霏霏，屋檐滴水成线。',
-      '他抬手轻轻翻过一页，仿佛掀开了一段尘封的岁月。',
-      '"你来了。"一个低沉的声音从暗处传来。',
-      '脚步停住，他没有回头，只是淡淡道："我来了。"',
-      '风从窗缝中挤进来，灯焰摇晃，墙上的影子也随之扭曲……',
-      '—— 未完待续 ——'
-    ];
-
-    readerContent.innerHTML = paragraphs.map(p => `<p>${p}</p>`).join('');
     prevChapterBtn.disabled = idx <= 0;
     nextChapterBtn.disabled = idx >= novel.chapters.length - 1;
+
+    // 读取真实章节内容
+    api(`/novels/${nid}/content/${idx}`).then(data => {
+      const title = data.chapter_title || novel.chapters[idx] || '未知章节';
+      readerChapterTitle.textContent = title;
+
+      const paragraphs = data.content.split('\n').filter(p => p.trim());
+      readerContent.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+    }).catch(() => {
+      readerChapterTitle.textContent = novel.chapters[idx] || '未知章节';
+      readerContent.innerHTML = '<p style="color:var(--text-muted);">章节内容加载失败</p>';
+    });
   });
 }
 
@@ -567,7 +562,7 @@ function updateUserUI() {
     registerBtn.style.display    = 'none';
     userAvatar.style.display     = 'flex';
     avatarLetter.textContent     = user.username.charAt(0).toUpperCase();
-    recommendSection.style.display = 'block';
+    recommendSection.style.display = state.categoryFilter === 'all' ? 'block' : 'none';
     navBookshelf.style.display   = 'block';
   } else {
     loginBtn.style.display       = 'inline-block';
@@ -793,8 +788,222 @@ function showHistoryModal() {
 }
 
 // ==========================================
+//  上传小说模态框（双模式）
+// ==========================================
+
+function showUploadModal() {
+  const catOptions = ALL_CATEGORIES.map(c =>
+    `<option value="${c}">${c}</option>`
+  ).join('');
+  const isLoggedIn = !!state.currentUser;
+
+  openModal(`
+    <button class="close-modal" id="modalCloseBtn">&times;</button>
+    <h2>📤 上传小说</h2>
+    <div class="subtitle">支持 txt 格式文件，文件将自动入库</div>
+
+    <div class="upload-tabs">
+      <span class="upload-tab active" data-mode="existing">📖 已有小说</span>
+      <span class="upload-tab" data-mode="own">✍️ 我的创作</span>
+    </div>
+
+    <div class="form-group">
+      <label>小说标题</label>
+      <input type="text" id="uploadTitle" placeholder="请输入小说标题" />
+    </div>
+
+    <div class="form-group" id="uploadAuthorGroup">
+      <label>作者</label>
+      <input type="text" id="uploadAuthor" placeholder="请输入作者名" />
+    </div>
+
+    <div class="form-group" id="uploadAuthorAuto" style="display:none;">
+      <label>作者</label>
+      <div class="upload-author-auto">
+        <i class="fas fa-user-circle"></i>
+        <span id="uploadAuthorDisplay">${isLoggedIn ? state.currentUser.username : '未登录'}</span>
+        ${!isLoggedIn ? '<span class="upload-login-hint">（请先登录）</span>' : ''}
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label>分类</label>
+      <select id="uploadCategory" class="upload-select">
+        ${catOptions}
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>上传文件</label>
+      <div class="upload-dropzone" id="uploadDropzone">
+        <div class="dropzone-icon"><i class="fas fa-cloud-upload-alt"></i></div>
+        <div class="dropzone-text">拖拽 txt 文件到此处，或点击选择</div>
+        <div class="dropzone-hint">仅支持 .txt 格式</div>
+        <input type="file" id="uploadFile" accept=".txt" hidden />
+        <div class="dropzone-file" id="dropzoneFile" style="display:none;">
+          <i class="fas fa-file-alt"></i>
+          <span id="dropzoneFileName"></span>
+          <span class="dropzone-remove" id="dropzoneRemove">&times;</span>
+        </div>
+      </div>
+    </div>
+
+    <button class="btn-block" id="uploadSubmitBtn" disabled>
+      <i class="fas fa-upload"></i> 上传
+    </button>
+
+    <div class="upload-progress" id="uploadProgress" style="display:none;"></div>
+  `);
+
+  // ---- 模式切换 ----
+  let currentMode = 'existing';
+  const tabs       = modalContent.querySelectorAll('.upload-tab');
+  const authorGrp  = modalContent.querySelector('#uploadAuthorGroup');
+  const authorAuto = modalContent.querySelector('#uploadAuthorAuto');
+
+  tabs.forEach(tab => {
+    tab.addEventListener('click', () => {
+      tabs.forEach(t => t.classList.remove('active'));
+      tab.classList.add('active');
+      currentMode = tab.dataset.mode;
+
+      if (currentMode === 'own') {
+        authorGrp.style.display  = 'none';
+        authorAuto.style.display = 'block';
+        if (!isLoggedIn) {
+          showToast('请先登录后再上传自己的作品', 'error');
+          setTimeout(closeModal, 800);
+          return;
+        }
+      } else {
+        authorGrp.style.display  = 'block';
+        authorAuto.style.display = 'none';
+      }
+    });
+  });
+
+  // ---- 拖拽 / 点击上传逻辑 ----
+  const dropzone   = modalContent.querySelector('#uploadDropzone');
+  const fileInput  = modalContent.querySelector('#uploadFile');
+  const fileTag    = modalContent.querySelector('#dropzoneFile');
+  const fileName   = modalContent.querySelector('#dropzoneFileName');
+  const removeBtn  = modalContent.querySelector('#dropzoneRemove');
+  const submitBtn  = modalContent.querySelector('#uploadSubmitBtn');
+  let selectedFile = null;
+
+  function updateFileUI(file) {
+    if (file) {
+      selectedFile = file;
+      dropzone.classList.add('has-file');
+      fileTag.style.display = 'flex';
+      fileName.textContent = file.name;
+      dropzone.querySelector('.dropzone-icon').style.display = 'none';
+      dropzone.querySelector('.dropzone-text').textContent = '已选择文件';
+      dropzone.querySelector('.dropzone-text').style.color = 'var(--accent)';
+      dropzone.querySelector('.dropzone-hint').style.display = 'none';
+      submitBtn.disabled = false;
+    } else {
+      selectedFile = null;
+      dropzone.classList.remove('has-file');
+      fileTag.style.display = 'none';
+      dropzone.querySelector('.dropzone-icon').style.display = 'block';
+      dropzone.querySelector('.dropzone-text').textContent = '拖拽 txt 文件到此处，或点击选择';
+      dropzone.querySelector('.dropzone-text').style.color = '';
+      dropzone.querySelector('.dropzone-hint').style.display = 'block';
+      submitBtn.disabled = true;
+    }
+  }
+
+  dropzone.addEventListener('click', e => {
+    if (e.target.closest('.dropzone-remove')) return;
+    fileInput.click();
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) updateFileUI(fileInput.files[0]);
+  });
+
+  removeBtn.addEventListener('click', e => {
+    e.stopPropagation();
+    fileInput.value = '';
+    updateFileUI(null);
+  });
+
+  dropzone.addEventListener('dragover', e => {
+    e.preventDefault();
+    dropzone.style.borderColor = 'var(--accent)';
+    dropzone.style.background  = 'color-mix(in srgb, var(--accent) 8%, var(--bg-card))';
+  });
+  dropzone.addEventListener('dragleave', () => {
+    dropzone.style.borderColor = '';
+    dropzone.style.background  = '';
+  });
+  dropzone.addEventListener('drop', e => {
+    e.preventDefault();
+    dropzone.style.borderColor = '';
+    dropzone.style.background  = '';
+    const f = e.dataTransfer.files[0];
+    if (f && f.name.endsWith('.txt')) {
+      fileInput.files = e.dataTransfer.files;
+      updateFileUI(f);
+    } else {
+      showToast('仅支持 .txt 格式文件', 'error');
+    }
+  });
+
+  modalContent.querySelector('#uploadSubmitBtn')
+    .addEventListener('click', () => handleUpload(selectedFile, currentMode));
+
+  modalContent.querySelector('#modalCloseBtn')
+    .addEventListener('click', closeModal);
+}
+
+async function handleUpload(file, mode) {
+  const title    = modalContent.querySelector('#uploadTitle').value.trim();
+  const category = modalContent.querySelector('#uploadCategory').value;
+  const progress = modalContent.querySelector('#uploadProgress');
+
+  let author;
+  if (mode === 'own') {
+    if (!state.currentUser) { showToast('请先登录', 'error'); return; }
+    author = state.currentUser.username;
+  } else {
+    author = modalContent.querySelector('#uploadAuthor').value.trim();
+    if (!author) { showToast('请输入作者', 'error'); return; }
+  }
+
+  if (!title)  { showToast('请输入小说标题', 'error'); return; }
+  if (!file)   { showToast('请选择 txt 文件', 'error'); return; }
+
+  const formData = new FormData();
+  formData.append('title', title);
+  formData.append('author', author);
+  formData.append('category', category);
+  formData.append('file', file);
+
+  progress.style.display = 'block';
+  progress.innerHTML = '<i class="fas fa-spinner fa-pulse"></i> 上传中...';
+
+  try {
+    const res = await fetch(API_BASE + '/novels/upload', { method: 'POST', body: formData });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || '上传失败');
+    showToast(`《${data.novel.title}》上传成功！`, 'success');
+    closeModal();
+    renderHome();
+  } catch (e) {
+    progress.innerHTML = '';
+    progress.style.display = 'none';
+    showToast(e.message, 'error');
+  }
+}
+
+// ==========================================
 //  事件绑定
 // ==========================================
+
+// --- 上传按钮 ---
+uploadBtn.addEventListener('click', showUploadModal);
 
 // --- 导航 ---
 navLinks.forEach(li => {
