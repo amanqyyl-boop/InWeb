@@ -35,10 +35,6 @@
           <i class="fas fa-moon"></i>
         </button>
 
-        <button class="upload-btn" id="uploadHeaderBtn" title="上传小说">
-          <i class="fas fa-upload"></i>
-        </button>
-
         <div class="user-area" id="userArea">
           <button class="user-btn outline" id="loginBtn">登录</button>
           <button class="user-btn" id="registerBtn">注册</button>
@@ -82,24 +78,21 @@
           <span class="tab" data-cat="历史">历史</span>
           <span class="tab" data-cat="科幻">科幻</span>
           <span class="tab" data-cat="悬疑">悬疑</span>
-          <span class="tab" data-cat="幻想">幻想</span>
-          <span class="tab" data-cat="军事">军事</span>
-          <span class="tab" data-cat="网游">网游</span>
         </div>
       </div>
 
       <div id="recommendSection" style="display:none;">
         <div class="recommend-banner" id="recommendBanner">
           <div>
-            <h3><i class="fas fa-brain"></i> 猜你喜欢</h3>
-            <p id="recommendSubtitle">基于你的阅读偏好精心挑选</p>
+            <h3><i class="fas fa-brain"></i> 为你推荐</h3>
+            <p>基于你的阅读偏好和浏览历史，精心挑选</p>
           </div>
           <div class="tag-list" id="recommendTags"></div>
-          <button class="recommend-refresh" id="recommendRefreshBtn" title="换一组">
-            <i class="fas fa-sync-alt"></i> 换一批
-          </button>
         </div>
-        <div class="recommend-pair" id="recommendPair"></div>
+        <div class="section-title">
+          <i class="fas fa-star"></i> 猜你喜欢 <span class="badge-rec">智能</span>
+        </div>
+        <div class="novel-grid" id="recommendGrid"></div>
       </div>
 
       <div class="section-title"><i class="fas fa-fire"></i> 热门推荐</div>
@@ -126,9 +119,6 @@
           <option value="历史">历史</option>
           <option value="科幻">科幻</option>
           <option value="悬疑">悬疑</option>
-          <option value="幻想">幻想</option>
-          <option value="军事">军事</option>
-          <option value="网游">网游</option>
         </select>
         <label>排序</label>
         <select id="sortFilter">
@@ -197,164 +187,6 @@
   <!-- ========== 模态框 ========== -->
   <div class="modal-overlay" id="modalOverlay">
     <div class="modal" id="modalContent"></div>
-  </div>
-
-  <!-- ========== 上传小说模态框 ========== -->
-  <div class="modal-overlay" id="uploadModalOverlay">
-    <div class="modal upload-modal" id="uploadModalContent">
-      <button class="close-modal" id="uploadModalClose">&times;</button>
-      <h2>📤 上传小说</h2>
-      <div class="subtitle">将txt小说文件添加到小说库</div>
-
-      <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group">
-          <label>小说标题</label>
-          <input type="text" id="uploadTitle" placeholder="请输入小说名称" required />
-        </div>
-
-        <div class="form-group">
-          <label>作者</label>
-          <input type="text" id="uploadAuthor" placeholder="请输入作者姓名" required />
-        </div>
-
-        <div class="form-group">
-          <label>分类</label>
-          <select id="uploadCategory" class="upload-select">
-            <option value="">请选择分类</option>
-            <option value="玄幻">玄幻</option>
-            <option value="仙侠">仙侠</option>
-            <option value="都市">都市</option>
-            <option value="历史">历史</option>
-            <option value="科幻">科幻</option>
-            <option value="悬疑">悬疑</option>
-            <option value="言情">言情</option>
-            <option value="幻想">幻想</option>
-            <option value="军事">军事</option>
-            <option value="网游">网游</option>
-          </select>
-        </div>
-
-        <div class="form-group">
-          <label>TXT文件</label>
-          <div class="file-drop-zone" id="fileDropZone">
-            <i class="fas fa-cloud-upload-alt"></i>
-            <p>拖拽txt文件到此处，或点击选择</p>
-            <input type="file" id="uploadFileInput" accept=".txt" hidden />
-            <button type="button" class="btn btn-secondary" id="uploadFileBtn">选择文件</button>
-          </div>
-          <div class="file-info" id="uploadFileInfo" style="display:none;">
-            <i class="fas fa-file-alt"></i>
-            <span id="uploadFileName"></span>
-            <span id="uploadFileSize" class="file-size"></span>
-          </div>
-        </div>
-
-        <div class="upload-progress" id="uploadProgress" style="display:none;">
-          <div class="progress-bar">
-            <div class="progress-fill" id="progressFill"></div>
-          </div>
-          <span id="uploadStatus">上传中...</span>
-        </div>
-
-        <button type="submit" class="btn-block" id="uploadSubmitBtn">
-          <i class="fas fa-upload"></i> 开始上传
-        </button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ========== 上传小说模态框 ========== -->
-  <div class="modal-overlay" id="uploadModalOverlay">
-    <div class="modal upload-modal" id="uploadModalContent">
-      <button class="close-modal" id="uploadModalClose">&times;</button>
-      <h2>📤 上传小说</h2>
-      <div class="subtitle">将txt小说文件添加到小说库</div>
-      <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group">
-          <label>小说标题</label>
-          <input type="text" id="uploadTitle" placeholder="请输入小说名称" required />
-        </div>
-        <div class="form-group">
-          <label>作者</label>
-          <input type="text" id="uploadAuthor" placeholder="请输入作者姓名" required />
-        </div>
-        <div class="form-group">
-          <label>分类</label>
-          <select id="uploadCategory" class="upload-select">
-            <option value="">请选择分类</option>
-            <option value="玄幻">玄幻</option><option value="仙侠">仙侠</option>
-            <option value="都市">都市</option><option value="历史">历史</option>
-            <option value="科幻">科幻</option><option value="悬疑">悬疑</option>
-            <option value="言情">言情</option><option value="幻想">幻想</option>
-            <option value="军事">军事</option><option value="网游">网游</option>
-          </select>
-        </div>
-        <div class="form-group">
-          <label>TXT文件</label>
-          <div class="file-drop-zone" id="fileDropZone">
-            <i class="fas fa-cloud-upload-alt"></i>
-            <p>拖拽txt文件到此处，或点击选择</p>
-            <input type="file" id="uploadFileInput" accept=".txt" hidden />
-            <button type="button" class="btn btn-secondary" id="uploadFileBtn">选择文件</button>
-          </div>
-          <div class="file-info" id="uploadFileInfo" style="display:none;">
-            <i class="fas fa-file-alt"></i>
-            <span id="uploadFileName"></span>
-            <span id="uploadFileSize" class="file-size"></span>
-          </div>
-        </div>
-        <div class="upload-progress" id="uploadProgress" style="display:none;">
-          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-          <span id="uploadStatus">上传中...</span>
-        </div>
-        <button type="submit" class="btn-block" id="uploadSubmitBtn"><i class="fas fa-upload"></i> 开始上传</button>
-      </form>
-    </div>
-  </div>
-
-  <!-- ========== 上传小说模态框 ========== -->
-  <div class="modal-overlay" id="uploadModalOverlay">
-    <div class="modal upload-modal" id="uploadModalContent">
-      <button class="close-modal" id="uploadModalClose">&times;</button>
-      <h2>📤 上传小说</h2>
-      <div class="subtitle">将txt小说文件添加到小说库</div>
-      <form id="uploadForm" enctype="multipart/form-data">
-        <div class="form-group"><label>小说标题</label>
-          <input type="text" id="uploadTitle" placeholder="请输入小说名称" required />
-        </div>
-        <div class="form-group"><label>作者</label>
-          <input type="text" id="uploadAuthor" placeholder="请输入作者姓名" required />
-        </div>
-        <div class="form-group"><label>分类</label>
-          <select id="uploadCategory" class="upload-select">
-            <option value="">请选择分类</option>
-            <option value="玄幻">玄幻</option><option value="仙侠">仙侠</option>
-            <option value="都市">都市</option><option value="历史">历史</option>
-            <option value="科幻">科幻</option><option value="悬疑">悬疑</option>
-            <option value="言情">言情</option><option value="幻想">幻想</option>
-            <option value="军事">军事</option><option value="网游">网游</option>
-          </select>
-        </div>
-        <div class="form-group"><label>TXT文件</label>
-          <div class="file-drop-zone" id="fileDropZone">
-            <i class="fas fa-cloud-upload-alt"></i>
-            <p>拖拽txt文件到此处，或点击选择</p>
-            <input type="file" id="uploadFileInput" accept=".txt" hidden />
-            <button type="button" class="btn btn-secondary" id="uploadFileBtn">选择文件</button>
-          </div>
-          <div class="file-info" id="uploadFileInfo" style="display:none;">
-            <i class="fas fa-file-alt"></i>
-            <span id="uploadFileName"></span>
-            <span id="uploadFileSize" class="file-size"></span>
-          </div>
-        </div>
-        <div class="upload-progress" id="uploadProgress" style="display:none;">
-          <div class="progress-bar"><div class="progress-fill" id="progressFill"></div></div>
-          <span id="uploadStatus">上传中...</span>
-        </div>
-        <button type="submit" class="btn-block" id="uploadSubmitBtn"><i class="fas fa-upload"></i> 开始上传</button>
-      </form>
-    </div>
   </div>
 
   <!-- ========== 页脚 ========== -->

@@ -1,318 +1,180 @@
-import os, re, json, random
+import os
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from cnn_recommender import recommend_novels, learn_from_browse
+from flask_sqlalchemy import SQLAlchemy
+from datetime import datetime
 
 app = Flask(__name__)
 CORS(app)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///novels.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-NOVEL_LIB_DIR = os.path.join(os.path.dirname(BASE_DIR), '小说库')
-ACCOUNTS_DIR = os.path.join(BASE_DIR, 'accounts')
-os.makedirs(ACCOUNTS_DIR, exist_ok=True)
-ID_COUNTER = os.path.join(ACCOUNTS_DIR, '_next_id.txt')
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(50), unique=True, nullable=False)
+    password = db.Column(db.String(100), nullable=False)
+    preferences = db.Column(db.String(200), default='')
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-CATEGORY_MAP = {'玄幻类':'玄幻','仙侠类':'仙侠','都市类':'都市','历史类':'历史','科幻类':'科幻','灵异类':'悬疑','幻想类':'幻想','军事类':'军事','网游类':'网游'}
-CATEGORY_EMOJI = {'玄幻':'⚔️','仙侠':'🌿','都市':'🏙️','历史':'🏯','科幻':'🚀','悬疑':'🔔','幻想':'🐉','军事':'🪖','网游':'🎮'}
-CATEGORY_FOLDER_MAP = {v:k for k,v in CATEGORY_MAP.items()}
+class BrowseRecord(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
+    novel_id = db.Column(db.String(20), nullable=False)
+    browsed_at = db.Column(db.DateTime, default=datetime.utcnow)
 
-# ─── 扫描小说库 ───
-def parse_info_txt(fp):
-    info = {}
-    if os.path.exists(fp):
-        with open(fp, 'r', encoding='utf-8') as f:
-            for line in f:
-                if ':' in line:
-                    k,v = line.strip().split(':',1)
-                    info[k.strip()] = v.strip()
-    return info
+NOVELS = [
+    {"id":"n1","title":"青云志","author":"萧鼎·仿","category":"玄幻","rating":9.2,"hot":9850,"desc":"天地不仁，以万物为刍狗。","cover":"☁️","chapters":["序章·青云山下","第一章 草庙村","第二章 七脉会武","第三章 噬魂之谜","第四章 竹林夜话","第五章 魔教来袭","第六章 天书现世","第七章 正邪之战","第八章 诛仙剑阵","第九章 凡尘飞升"]},
+    {"id":"n2","title":"星辰变","author":"番茄·仿","category":"玄幻","rating":9.0,"hot":8720,"desc":"星球破碎，少年秦羽得星辰传承。","cover":"🌌","chapters":["第一章 海底洞穴","第二章 星辰之力","第三章 九剑秘境","第四章 紫玄星","第五章 万妖谷","第六章 星辰大海","第七章 神界争锋","第八章 鸿蒙之始"]},
+    {"id":"n3","title":"仙路烟尘","author":"管平潮·仿","category":"仙侠","rating":8.8,"hot":6340,"desc":"一曲仙乐动九州，少年陈歌以琴入道。","cover":"🎋","chapters":["引子 琴音初动","第一章 江南烟雨","第二章 青城论道","第三章 魔琴之乱","第四章 九天玄音","第五章 红尘劫","第六章 仙凡之隔"]},
+    {"id":"n4","title":"繁华都市","author":"都市夜归人","category":"都市","rating":8.5,"hot":7210,"desc":"从乡村走出的少年，在大都市中逆袭。","cover":"🏙️","chapters":["第一章 初入魔都","第二章 妙手回春","第三章 商海沉浮","第四章 红颜知己","第五章 暗流涌动","第六章 巅峰对决","第七章 繁华落幕"]},
+    {"id":"n5","title":"春风十里不如你","author":"花间醉","category":"言情","rating":9.1,"hot":11800,"desc":"一段跨越十年的暗恋与守护。","cover":"🌸","chapters":["第一章 初见","第二章 同桌的你","第三章 毕业季","第四章 北上广","第五章 重逢","第六章 告白","第七章 余生"]},
+    {"id":"n6","title":"大秦帝国","author":"孙皓晖·仿","category":"历史","rating":9.3,"hot":5500,"desc":"大秦从边陲小国到一统天下。","cover":"🏯","chapters":["第一章 河西狼烟","第二章 商鞅变法","第三章 合纵连横","第四章 长平之战","第五章 帝王之路","第六章 天下一统"]},
+    {"id":"n7","title":"深空彼岸","author":"辰东·仿","category":"科幻","rating":8.9,"hot":6890,"desc":"星际时代，少年王煊觉醒超凡之力。","cover":"🚀","chapters":["第一章 宇宙漂流","第二章 新星纪元","第三章 超凡觉醒","第四章 星海争霸","第五章 深渊来客","第六章 彼岸之光"]},
+    {"id":"n8","title":"午夜凶铃","author":"铃木光司·仿","category":"悬疑","rating":8.7,"hot":4320,"desc":"一卷神秘的录像带，七天之谜。","cover":"🔔","chapters":["第一章 录像带","第二章 七日之约","第三章 死亡预言","第四章 井中谜团","第五章 诅咒真相","第六章 轮回"]},
+    {"id":"n9","title":"斗罗大陆","author":"唐家三少·仿","category":"玄幻","rating":9.0,"hot":15200,"desc":"唐门外门弟子唐三穿越斗罗大陆。","cover":"⚔️","chapters":["第一章 穿越","第二章 武魂觉醒","第三章 史莱克学院","第四章 魂师大赛","第五章 海神岛","第六章 双神战","第七章 成神之路"]},
+    {"id":"n10","title":"凡人修仙传","author":"忘语·仿","category":"仙侠","rating":8.6,"hot":7800,"desc":"平凡少年韩立踏上修仙界。","cover":"🌿","chapters":["第一章 七玄门","第二章 血色试炼","第三章 筑基之路","第四章 灵界风云","第五章 大乘之战","第六章 飞升灵界"]},
+    {"id":"n11","title":"傲慢与偏见","author":"简·奥斯汀·仿","category":"言情","rating":9.4,"hot":3200,"desc":"英国乡村的优雅爱情。","cover":"💃","chapters":["第一章 尼日斐庄园","第二章 舞会","第三章 傲慢","第四章 偏见","第五章 柯林斯先生","第六章 达西先生的信","第七章 彭伯利","第八章 终成眷属"]},
+    {"id":"n12","title":"三体","author":"刘慈欣·仿","category":"科幻","rating":9.6,"hot":9200,"desc":"人类文明与三体文明的首次接触。","cover":"🌍","chapters":["第一章 科学边界","第二章 三体游戏","第三章 红岸基地","第四章 三体文明","第五章 面壁者","第六章 黑暗森林","第七章 死神永生"]}
+]
 
-def scan_novel_library():
-    novels = []; idx = 0
-    if not os.path.isdir(NOVEL_LIB_DIR): return novels
-    for fn in sorted(os.listdir(NOVEL_LIB_DIR)):
-        fp = os.path.join(NOVEL_LIB_DIR, fn)
-        if not os.path.isdir(fp): continue
-        cat = CATEGORY_MAP.get(fn, fn.replace('类',''))
-        for nd in sorted(os.listdir(fp)):
-            np = os.path.join(fp, nd)
-            if not os.path.isdir(np): continue
-            info = parse_info_txt(os.path.join(np,"info.txt"))
-            title = info.get('标题',nd)
-            author = info.get('作者','未知')
-            emoji = info.get('封面',CATEGORY_EMOJI.get(cat,'📖'))
-            txt = None
-            for f2 in os.listdir(np):
-                if f2.endswith('.txt') and f2!='info.txt':
-                    txt = os.path.join(np,f2); break
-            if not txt: continue
-            idx += 1
-            fs = os.path.getsize(txt)
-            novels.append({"id":f"f{idx:03d}","title":title,"author":author,"category":cat,
-                "rating":round(min(9.5,7.0+(fs/20000000)*2.5),1),"hot":min(15000,3000+fs//1000),
-                "desc":f"来自小说库·{cat}类的作品。作者：{author}","cover":emoji,"filepath":txt,"filesize":fs})
-    return novels
-
-ALL_NOVELS = scan_novel_library()
-
-def get_novel_by_id(nid):
-    for n in ALL_NOVELS:
-        if n['id']==nid: return n
+def get_novel_by_id(novel_id):
+    for n in NOVELS:
+        if n['id'] == novel_id:
+            return n
     return None
 
-def get_novel_filepath(novel):
-    if novel.get('filepath') and os.path.exists(novel['filepath']):
-        return novel['filepath']
-    for fn,wc in CATEGORY_MAP.items():
-        if wc==novel['category']:
-            fp = os.path.join(NOVEL_LIB_DIR,fn)
-            if os.path.isdir(fp):
-                for f in os.listdir(fp):
-                    if novel['title'] in f: return os.path.join(fp,f)
-    return None
+def parse_preferences(pref_str):
+    return [p.strip() for p in pref_str.split(',') if p.strip()] if pref_str else []
 
-def read_novel_file(fp):
-    if not os.path.exists(fp): return None
-    try:
-        with open(fp,'r',encoding='utf-8') as f: text=f.read()
-    except:
-        try:
-            with open(fp,'r',encoding='gbk') as f: text=f.read()
-        except: return None
-    pat = re.compile(r'(第[一二三四五六七八九十百千零\d]+[章回节部])')
-    parts = pat.split(text); chapters = []
-    if len(parts)>1:
-        cur="序章"
-        for i,p in enumerate(parts):
-            if re.match(r'第[^第]+$',p): cur=p
-            elif p.strip():
-                ps=[x.strip() for x in p.split('\n') if x.strip()]
-                chapters.append({'title':cur,'content':'\n'.join(ps[:300])[:8000]})
-                cur="后续"
-    else:
-        ps=[x.strip() for x in text.split('\n') if x.strip()]
-        for i in range(0,min(len(ps),2000),80):
-            chapters.append({'title':f'第{len(chapters)+1}章','content':'\n'.join(ps[i:i+80][:300])[:8000]})
-    return chapters if chapters else None
-
-# ─── 文件账号系统 ───
-def _next_id():
-    try:
-        with open(ID_COUNTER,'r') as f: n=int(f.read().strip())
-    except: n=1
-    with open(ID_COUNTER,'w') as f: f.write(str(n+1))
-    return n
-
-def _read_user(uid):
-    p=os.path.join(ACCOUNTS_DIR,str(uid),'info.txt')
-    if not os.path.exists(p): return None
-    info={}
-    with open(p,'r',encoding='utf-8') as f:
-        for line in f:
-            if ':' in line: k,v=line.strip().split(':',1); info[k.strip()]=v.strip()
-    return info
-
-def _write_user(uid,un,pw,pr):
-    d=os.path.join(ACCOUNTS_DIR,str(uid)); os.makedirs(d,exist_ok=True)
-    with open(os.path.join(d,'info.txt'),'w',encoding='utf-8') as f:
-        f.write(f"用户名: {un}\n密码: {pw}\n偏好: {','.join(pr)}\n")
-
-def _read_history(uid):
-    p=os.path.join(ACCOUNTS_DIR,str(uid),'history.txt')
-    if not os.path.exists(p): return []
-    rs=[]
-    with open(p,'r',encoding='utf-8') as f:
-        for line in f:
-            line=line.strip()
-            if line:
-                parts=line.rsplit('|',1)
-                rs.append({'novel_id':parts[0],'time':parts[1] if len(parts)>1 else ''})
-    return rs
-
-def _write_history(uid,rs):
-    d=os.path.join(ACCOUNTS_DIR,str(uid)); os.makedirs(d,exist_ok=True)
-    with open(os.path.join(d,'history.txt'),'w',encoding='utf-8') as f:
-        for r in rs: f.write(f"{r['novel_id']}|{r['time']}\n")
-
-def _add_history(uid,nid):
-    rs=_read_history(uid)
-    rs=[r for r in rs if r['novel_id']!=nid]
-    rs.insert(0,{'novel_id':nid,'time':str(int(__import__('time').time()))})
-    _write_history(uid,rs[:50]); return rs
-
-def _user_exists(un):
-    for d in os.listdir(ACCOUNTS_DIR):
-        if d=='_next_id.txt' or not d.isdigit(): continue
-        info=_read_user(d)
-        if info and info.get('用户名')==un: return True
-    return False
-
-def _find_user(un):
-    for d in os.listdir(ACCOUNTS_DIR):
-        if d=='_next_id.txt' or not d.isdigit(): continue
-        info=_read_user(d)
-        if info and info.get('用户名')==un: return int(d),info
-    return None,None
-
-# ─── 内容API ───
-@app.route('/api/novels/<nid>/content/<int:ci>',methods=['GET'])
-def get_chapter_content(nid,ci):
-    novel=get_novel_by_id(nid)
-    if not novel: return jsonify({'error':'小说不存在'}),404
-    fp=get_novel_filepath(novel)
-    if not fp: return jsonify({'error':'暂无文本文件'}),404
-    chs=read_novel_file(fp)
-    if not chs or ci<0 or ci>=len(chs): return jsonify({'error':'章节不存在'}),404
-    ch=chs[ci]
-    return jsonify({'novel_id':nid,'chapter_index':ci,'chapter_title':ch['title'],'content':ch['content'],'total_chapters':len(chs)})
-
-@app.route('/api/novels/<nid>/file-info',methods=['GET'])
-def get_novel_file_info(nid):
-    novel=get_novel_by_id(nid)
-    if not novel: return jsonify({'error':'小说不存在'}),404
-    fp=get_novel_filepath(novel)
-    if not fp or not os.path.exists(fp): return jsonify({'has_file':False})
-    chs=read_novel_file(fp)
-    return jsonify({'has_file':True,'file_name':os.path.basename(fp),'file_size':os.path.getsize(fp),'total_chapters':len(chs) if chs else 0})
-
-# ─── 账号API ───
-@app.route('/api/register',methods=['POST'])
+@app.route('/api/register', methods=['POST'])
 def register():
-    data=request.get_json(); un=data.get('username','').strip(); pw=data.get('password','').strip(); pr=data.get('preferences',[])
-    if not un or len(un)<2: return jsonify({'error':'用户名至少2个字符'}),400
-    if not pw or len(pw)<3: return jsonify({'error':'密码至少3个字符'}),400
-    if len(pr)<2: return jsonify({'error':'请至少选择2个偏好类型'}),400
-    if _user_exists(un): return jsonify({'error':'用户已存在'}),400
-    uid=_next_id(); _write_user(uid,un,pw,pr)
-    return jsonify({'id':uid,'username':un,'preferences':pr}),201
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    preferences = data.get('preferences', [])
+    if not username or len(username) < 2:
+        return jsonify({'error': '用户名至少2个字符'}), 400
+    if not password or len(password) < 3:
+        return jsonify({'error': '密码至少3个字符'}), 400
+    if len(preferences) < 2:
+        return jsonify({'error': '请至少选择2个偏好类型'}), 400
+    existing = User.query.filter_by(username=username).first()
+    if existing:
+        return jsonify({'error': '用户已存在'}), 400
+    user = User(username=username, password=password, preferences=','.join(preferences))
+    db.session.add(user)
+    db.session.commit()
+    return jsonify({'id': user.id, 'username': user.username, 'preferences': preferences}), 201
 
-@app.route('/api/login',methods=['POST'])
+@app.route('/api/login', methods=['POST'])
 def login():
-    data=request.get_json(); un=data.get('username','').strip(); pw=data.get('password','').strip()
-    uid,info=_find_user(un)
-    if not info or info.get('密码')!=pw: return jsonify({'error':'用户名或密码错误'}),401
-    pr=[p.strip() for p in info.get('偏好','').split(',') if p.strip()]
-    return jsonify({'id':uid,'username':un,'preferences':pr})
+    data = request.get_json()
+    username = data.get('username', '').strip()
+    password = data.get('password', '').strip()
+    user = User.query.filter_by(username=username).first()
+    if not user or user.password != password:
+        return jsonify({'error': '用户名或密码错误'}), 401
+    return jsonify({'id': user.id, 'username': user.username, 'preferences': parse_preferences(user.preferences)})
 
-@app.route('/api/user/<int:uid>',methods=['GET'])
-def get_user(uid):
-    info=_read_user(uid)
-    if not info: return jsonify({'error':'用户不存在'}),404
-    pr=[p.strip() for p in info.get('偏好','').split(',') if p.strip()]
-    return jsonify({'id':uid,'username':info.get('用户名',''),'preferences':pr})
-
-@app.route('/api/user/<int:uid>/preferences',methods=['PUT'])
-def update_preferences(uid):
-    info=_read_user(uid)
-    if not info: return jsonify({'error':'用户不存在'}),404
-    data=request.get_json(); pr=data.get('preferences',[])
-    if len(pr)<2: return jsonify({'error':'至少选择2个偏好'}),400
-    _write_user(uid,info.get('用户名',''),info.get('密码',''),pr)
-    return jsonify({'preferences':pr})
-
-# ─── 小说查询API ───
-@app.route('/api/novels',methods=['GET'])
+@app.route('/api/novels', methods=['GET'])
 def get_novels():
-    cat=request.args.get('category','all'); sort=request.args.get('sort','hot')
-    ns=ALL_NOVELS[:]
-    if cat!='all': ns=[n for n in ns if n['category']==cat]
-    if sort=='hot': ns.sort(key=lambda x:x['hot'],reverse=True)
-    elif sort=='rating': ns.sort(key=lambda x:x['rating'],reverse=True)
-    elif sort=='new': ns.sort(key=lambda x:x.get('filesize',0),reverse=True)
-    return jsonify([{k:v for k,v in n.items() if k not in ('filepath','filesize')} for n in ns])
-
-@app.route('/api/novels/<nid>',methods=['GET'])
-def get_novel_detail(nid):
-    novel=get_novel_by_id(nid)
-    if not novel: return jsonify({'error':'小说不存在'}),404
-    item={k:v for k,v in novel.items() if k not in ('filepath','filesize')}
-    if 'chapters' not in item or not item['chapters']:
-        fp=get_novel_filepath(novel)
-        if fp:
-            chs=read_novel_file(fp)
-            item['chapters']=[c['title'] for c in chs] if chs else ['第一章']
-        else: item['chapters']=['第一章']
-    return jsonify(item)
-
-# ─── 浏览&历史API ───
-@app.route('/api/browse',methods=['POST'])
-def record_browse():
-    data=request.get_json(); uid=data.get('user_id'); nid=data.get('novel_id')
-    if not uid or not nid: return jsonify({'error':'缺少参数'}),400
-    if not _read_user(uid): return jsonify({'error':'用户不存在'}),404
-    rs=_add_history(uid,nid)
-    try: learn_from_browse(uid,nid,ALL_NOVELS,rs)
-    except: pass
-    return jsonify({'status':'ok'})
-
-@app.route('/api/history/<int:uid>',methods=['GET'])
-def get_history(uid):
-    if not _read_user(uid): return jsonify({'error':'用户不存在'}),404
-    records=_read_history(uid); seen=set(); novels=[]
-    for r in records:
-        if r['novel_id'] not in seen:
-            seen.add(r['novel_id'])
-            n=get_novel_by_id(r['novel_id'])
-            if n:
-                item={k:v for k,v in n.items() if k not in ('filepath','filesize')}
-                item['browse_time']=r['time']; novels.append(item)
+    category = request.args.get('category', 'all')
+    sort_by = request.args.get('sort', 'hot')
+    novels = NOVELS[:]
+    if category != 'all':
+        novels = [n for n in novels if n['category'] == category]
+    if sort_by == 'hot':
+        novels.sort(key=lambda x: x['hot'], reverse=True)
+    elif sort_by == 'rating':
+        novels.sort(key=lambda x: x['rating'], reverse=True)
+    elif sort_by == 'new':
+        novels.sort(key=lambda x: x['id'], reverse=True)
     return jsonify(novels)
 
-@app.route('/api/history/<int:uid>/delete',methods=['POST'])
-def delete_history(uid):
-    if not _read_user(uid): return jsonify({'error':'用户不存在'}),404
-    data=request.get_json(); nid=data.get('novel_id','')
-    rs=[r for r in _read_history(uid) if r['novel_id']!=nid]
-    _write_history(uid,rs)
-    return jsonify({'status':'ok'})
+@app.route('/api/novels/<novel_id>', methods=['GET'])
+def get_novel_detail(novel_id):
+    novel = get_novel_by_id(novel_id)
+    if not novel:
+        return jsonify({'error': '小说不存在'}), 404
+    return jsonify(novel)
 
-@app.route('/api/history/<int:uid>/clear',methods=['POST'])
-def clear_history(uid):
-    if not _read_user(uid): return jsonify({'error':'用户不存在'}),404
-    _write_history(uid,[])
-    return jsonify({'status':'ok'})
+@app.route('/api/browse', methods=['POST'])
+def record_browse():
+    data = request.get_json()
+    user_id = data.get('user_id')
+    novel_id = data.get('novel_id')
+    if not user_id or not novel_id:
+        return jsonify({'error': '缺少参数'}), 400
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    record = BrowseRecord(user_id=user_id, novel_id=novel_id)
+    db.session.add(record)
+    db.session.commit()
+    return jsonify({'status': 'ok'})
 
-# ─── 推荐API ───
-@app.route('/api/recommend/random',methods=['GET'])
-def random_recommend():
-    selected=random.sample(ALL_NOVELS,min(2,len(ALL_NOVELS)))
-    return jsonify([{k:v for k,v in n.items() if k not in ('filepath','filesize')} for n in selected])
+@app.route('/api/history/<int:user_id>', methods=['GET'])
+def get_history(user_id):
+    records = BrowseRecord.query.filter_by(user_id=user_id).order_by(BrowseRecord.browsed_at.desc()).limit(20).all()
+    novel_ids = list(set([r.novel_id for r in records]))
+    novels = []
+    for nid in novel_ids:
+        n = get_novel_by_id(nid)
+        if n:
+            novels.append(n)
+    return jsonify(novels)
 
-@app.route('/api/recommend/<int:uid>',methods=['GET'])
-def recommend(uid):
-    info=_read_user(uid)
-    if not info: return jsonify({'error':'用户不存在'}),404
-    pr=[p.strip() for p in info.get('偏好','').split(',') if p.strip()]
-    rec=recommend_novels(uid,ALL_NOVELS,_read_history(uid),pr)
-    return jsonify([{k:v for k,v in n.items() if k not in ('filepath','filesize')} for n in rec])
+@app.route('/api/recommend/<int:user_id>', methods=['GET'])
+def recommend(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    preferences = parse_preferences(user.preferences)
+    records = BrowseRecord.query.filter_by(user_id=user_id).all()
+    history_ids = set(r.novel_id for r in records)
+    history_novels = [get_novel_by_id(nid) for nid in history_ids if get_novel_by_id(nid)]
+    scored = []
+    for novel in NOVELS:
+        score = 0
+        if novel['category'] in preferences:
+            score += 10
+        if any(h and h['category'] == novel['category'] and h['id'] != novel['id'] for h in history_novels):
+            score += 5
+        if novel['id'] in history_ids:
+            score += 2
+        score += novel['rating'] / 3
+        score += novel['hot'] / 5000 * 0.5
+        scored.append((novel, score))
+    scored.sort(key=lambda x: x[1], reverse=True)
+    return jsonify([n for n, s in scored[:8]])
 
-# ─── 上传API ───
-@app.route('/api/novels/upload',methods=['POST'])
-def upload_novel():
-    title=request.form.get('title','').strip(); author=request.form.get('author','').strip()
-    category=request.form.get('category','').strip(); file=request.files.get('file')
-    if not title: return jsonify({'error':'请输入小说标题'}),400
-    if not author: return jsonify({'error':'请输入作者'}),400
-    if not category: return jsonify({'error':'请选择分类'}),400
-    if not file or not file.filename.endswith('.txt'): return jsonify({'error':'请上传txt文件'}),400
-    fn=CATEGORY_FOLDER_MAP.get(category,category+'类')
-    cd=os.path.join(NOVEL_LIB_DIR,fn); os.makedirs(cd,exist_ok=True)
-    nd=os.path.join(cd,title)
-    if os.path.exists(nd): return jsonify({'error':f'小说《{title}》已存在'}),400
-    os.makedirs(nd)
-    try:
-        sf=f"{title}.txt"; file.save(os.path.join(nd,sf))
-        emoji=CATEGORY_EMOJI.get(category,'📖')
-        with open(os.path.join(nd,"info.txt"),'w',encoding='utf-8') as f:
-            f.write(f"标题: {title}\n作者: {author}\n分类: {category}\n封面: {emoji}\n文件名: {sf}\n文件大小: {os.path.getsize(os.path.join(nd,sf))}\n")
-        return jsonify({'success':True,'novel':{'title':title,'author':author,'category':category,'cover':emoji}}),201
-    except Exception as e:
-        if os.path.exists(nd): import shutil; shutil.rmtree(nd)
-        return jsonify({'error':f'上传失败: {str(e)}'}),500
+@app.route('/api/user/<int:user_id>', methods=['GET'])
+def get_user(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    return jsonify({'id': user.id, 'username': user.username, 'preferences': parse_preferences(user.preferences)})
 
-# ─── 启动 ───
-if not _user_exists('demo'):
-    _write_user(_next_id(),'demo','123',['玄幻','仙侠'])
+@app.route('/api/user/<int:user_id>/preferences', methods=['PUT'])
+def update_preferences(user_id):
+    user = User.query.get(user_id)
+    if not user:
+        return jsonify({'error': '用户不存在'}), 404
+    data = request.get_json()
+    preferences = data.get('preferences', [])
+    if len(preferences) < 2:
+        return jsonify({'error': '至少选择2个偏好'}), 400
+    user.preferences = ','.join(preferences)
+    db.session.commit()
+    return jsonify({'preferences': preferences})
 
-if __name__=='__main__':
-    app.run(debug=True,host='0.0.0.0',port=5000)
+with app.app_context():
+    db.create_all()
+    if not User.query.first():
+        demo = User(username='demo', password='123', preferences='玄幻,仙侠')
+        db.session.add(demo)
+        db.session.commit()
+
+if __name__ == '__main__':
+    app.run(debug=True, host='0.0.0.0', port=5000)
