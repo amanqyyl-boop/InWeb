@@ -115,31 +115,34 @@ function toggleBookshelf(id) {
   }
 }
 
-// --- 评论 ---
-function getComments(novelId) {
-  try { return JSON.parse(localStorage.getItem('gbu_comments_' + novelId) || '[]'); }
-  catch { return []; }
+// --- 评论（服务端 API）---
+async function loadComments(novelId, chapterIndex, paragraphIndex = -1) {
+  try {
+    const res = await fetch(`${API_BASE}/comments/${novelId}/${chapterIndex}?pi=${paragraphIndex}`);
+    return await res.json();
+  } catch { return []; }
 }
 
-function saveComments(novelId, comments) {
-  localStorage.setItem('gbu_comments_' + novelId, JSON.stringify(comments));
-}
-
-function addComment(novelId, username, text) {
-  const comments = getComments(novelId);
-  comments.unshift({
-    id: Date.now(),
-    username: username,
-    text: text,
-    time: new Date().toLocaleString('zh-CN')
+async function postComment(novelId, chapterIndex, text, paragraphIndex = -1, parentId = null) {
+  if (!state.currentUser) { showToast('请先登录', 'error'); return null; }
+  const res = await fetch(`${API_BASE}/comments`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: state.currentUser.id, novel_id: novelId,
+      chapter_index: chapterIndex, paragraph_index: paragraphIndex, text, parent_id: parentId })
   });
-  if (comments.length > 50) comments.length = 50;
-  saveComments(novelId, comments);
+  const data = await res.json();
+  if (!res.ok) { showToast(data.error || '评论失败', 'error'); return null; }
+  return data;
 }
 
-function deleteComment(novelId, commentId) {
-  const comments = getComments(novelId).filter(c => c.id !== commentId);
-  saveComments(novelId, comments);
+async function voteComment(commentId, vote) {
+  if (!state.currentUser) { showToast('请先登录', 'error'); return; }
+  await fetch(`${API_BASE}/comments/${commentId}/vote`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ user_id: state.currentUser.id, vote })
+  });
 }
 
 // --- 阅读进度 ---
@@ -309,41 +312,75 @@ function renderBookshelf() {
   });
 }
 
-// --- 评论区渲染 ---
-function renderComments(novelId) {
-  const comments = getComments(novelId);
-  if (!comments.length) {
-    commentList.innerHTML = '<div class="comment-empty">暂无评论，来写第一条吧</div>';
-    return;
-  }
-
-  const currentName = state.currentUser ? state.currentUser.username : '';
-
-  commentList.innerHTML = comments.map(c => {
-    const deleteBtn = (currentName && currentName === c.username)
-      ? `<span class="comment-delete" data-cid="${c.id}">
-           <i class="fas fa-trash-alt"></i>
-         </span>`
-      : '';
-    return `
-      <div class="comment-item">
-        <div class="comment-user">
-          ${c.username}
-          <span class="comment-time">${c.time}</span>
-          ${deleteBtn}
-        </div>
-        <div class="comment-text">${c.text}</div>
-      </div>`;
-  }).join('');
-
-  commentList.querySelectorAll('.comment-delete').forEach(el => {
-    el.addEventListener('click', () => {
-      const cid = parseInt(el.dataset.cid);
-      deleteComment(novelId, cid);
-      renderComments(novelId);
-      showToast('评论已删除', 'info');
+// --- 评论区渲染（服务端）---
+function renderComments(novelId, chapterIndex = -1, container = null) {
+  const list = container || commentList;
+  list.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);"><i class="fas fa-spinner fa-pulse"></i> 加载中...</div>';
+  loadComments(novelId, chapterIndex >= 0 ? chapterIndex : 0).then(comments => {
+    if (!comments.length) {
+      list.innerHTML = '<div class="comment-empty">暂无评论，来写第一条吧</div>';
+      return;
+    }
+    list.innerHTML = comments.map(c => _renderCommentItem(c, novelId, chapterIndex)).join('');
+    // 绑定回复/投票事件
+    list.querySelectorAll('.c-reply-btn').forEach(btn => {
+      btn.addEventListener('click', () => _toggleReplyForm(btn.dataset.cid, novelId, chapterIndex, list));
+    });
+    list.querySelectorAll('.c-vote-up, .c-vote-down').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        await voteComment(parseInt(btn.dataset.cid), parseInt(btn.dataset.vote));
+        renderComments(novelId, chapterIndex, container);
+      });
     });
   });
+}
+
+function _renderCommentItem(c, novelId, chapterIndex, isReply = false) {
+  const time = new Date(c.created_at * 1000).toLocaleString('zh-CN');
+  const voteCls = (v) => v > 0 ? 'c-vote-active' : '';
+  return `
+    <div class="comment-item" style="${isReply ? 'margin-left:32px;padding:8px 12px;background:var(--bg);border-radius:var(--radius-sm);' : ''}">
+      <div class="comment-user">
+        <span class="c-avatar">${c.username.charAt(0).toUpperCase()}</span>
+        <strong>${c.username}</strong>
+        <span class="comment-time">${time}</span>
+      </div>
+      <div class="comment-text">${c.text}</div>
+      <div class="comment-actions">
+        <span class="c-vote-up ${voteCls(c.upvotes - c.downvotes)}" data-cid="${c.id}" data-vote="1">
+          <i class="fas fa-thumbs-up"></i> ${c.upvotes}
+        </span>
+        <span class="c-vote-down" data-cid="${c.id}" data-vote="-1">
+          <i class="fas fa-thumbs-down"></i> ${c.downvotes}
+        </span>
+        ${!isReply ? `<span class="c-reply-btn" data-cid="${c.id}"><i class="fas fa-reply"></i> 回复</span>` : ''}
+      </div>
+      ${c.replies && c.replies.length ? c.replies.map(r => _renderCommentItem(r, novelId, chapterIndex, true)).join('') : ''}
+      <div class="c-reply-form" id="replyForm-${c.id}" style="display:none;">
+        <input type="text" placeholder="写下回复..." class="c-reply-input" />
+        <button class="c-reply-submit" data-cid="${c.id}">发送</button>
+      </div>
+    </div>`;
+}
+
+function _toggleReplyForm(cid, novelId, chapterIndex, list) {
+  const form = list.querySelector(`#replyForm-${cid}`);
+  if (!form) return;
+  const shown = form.style.display !== 'none';
+  form.style.display = shown ? 'none' : 'flex';
+  if (!shown) {
+    const input = form.querySelector('.c-reply-input');
+    const btn = form.querySelector('.c-reply-submit');
+    btn.onclick = async () => {
+      const text = input.value.trim();
+      if (!text) return;
+      await postComment(novelId, chapterIndex, text, -1, parseInt(cid));
+      input.value = '';
+      form.style.display = 'none';
+      renderComments(novelId, chapterIndex, list);
+      showToast('回复成功', 'success');
+    };
+  }
 }
 
 // --- 详情页 ---
@@ -424,7 +461,7 @@ function openDetail(id) {
       );
     });
 
-    renderComments(novel.id);
+    renderComments(novel.id, 0);
     navigateTo('detail');
   });
 }
@@ -450,13 +487,115 @@ function renderReader() {
     prevChapterBtn.disabled = idx <= 0;
     nextChapterBtn.disabled = idx >= novel.chapters.length - 1;
 
-    // 读取真实章节内容
-    api(`/novels/${nid}/content/${idx}`).then(data => {
+    api(`/novels/${nid}/content/${idx}`).then(async data => {
       const title = data.chapter_title || novel.chapters[idx] || '未知章节';
       readerChapterTitle.textContent = title;
 
       const paragraphs = data.content.split('\n').filter(p => p.trim());
-      readerContent.innerHTML = paragraphs.map(p => `<p>${p.trim()}</p>`).join('');
+      // 加载本章评论
+      const comments = await loadComments(nid, idx);
+      // 按段落分组
+      const commentMap = {};
+      comments.forEach(c => {
+        const pi = c.paragraph_index;
+        if (!commentMap[pi]) commentMap[pi] = [];
+        commentMap[pi].push(c);
+      });
+
+      readerContent.innerHTML = paragraphs.map((p, pi) => {
+        const pc = commentMap[pi] || [];
+        const count = pc.length;
+        return `
+          <div class="p-wrap">
+            <p class="p-text">${p.trim()}</p>
+            <div class="p-comments">
+              <span class="p-cmt-btn" data-pi="${pi}">
+                <i class="fas fa-comment-dots"></i>
+                ${count ? `<span class="p-cmt-count">${count}</span>` : ''}
+              </span>
+              <div class="p-cmts" id="pCmts-${pi}" style="display:none;"></div>
+            </div>
+          </div>`;
+      }).join('');
+
+      // 绑定段落评论按钮
+      readerContent.querySelectorAll('.p-cmts').forEach(el => el.style.display = 'none');
+      readerContent.querySelectorAll('.p-cmnt-list').forEach(el => el.remove());
+
+      readerContent.querySelectorAll('.p-cmts').forEach(el => {
+        const pi = parseInt(el.id.replace('pCmts-', ''));
+        // 加载该段落的评论
+        loadComments(nid, idx, pi).then(cmtList => {
+          if (!cmtList.length) {
+            el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">暂无段落评论</div>';
+          } else {
+            el.innerHTML = cmtList.map(c => _renderCommentItem(c, nid, idx)).join('');
+            el.querySelectorAll('.c-reply-btn').forEach(btn => {
+              btn.addEventListener('click', () => _toggleReplyForm(btn.dataset.cid, nid, idx, el));
+            });
+            el.querySelectorAll('.c-vote-up, .c-vote-down').forEach(btn => {
+              btn.addEventListener('click', async () => {
+                await voteComment(parseInt(btn.dataset.cid), parseInt(btn.dataset.vote));
+                loadComments(nid, idx, pi).then(cs => {
+                  el.innerHTML = cs.map(c => _renderCommentItem(c, nid, idx)).join('');
+                });
+              });
+            });
+          }
+        });
+      });
+
+      // 切换段落评论面板
+      readerContent.querySelectorAll('.p-cmt-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const pi = btn.dataset.pi;
+          const panel = document.getElementById(`pCmts-${pi}`);
+          const isOpen = panel.style.display !== 'none';
+          // 关闭其他
+          readerContent.querySelectorAll('.p-cmts').forEach(el => el.style.display = 'none');
+          panel.style.display = isOpen ? 'none' : 'block';
+          if (!isOpen) {
+            // 追加输入框
+            const existingForm = panel.querySelector('.p-cmt-form');
+            if (!existingForm) {
+              const form = document.createElement('div');
+              form.className = 'p-cmt-form';
+              form.innerHTML = `
+                <input type="text" class="p-cmt-input" placeholder="在此段落下写评论..." />
+                <button class="p-cmt-send">发送</button>
+              `;
+              panel.appendChild(form);
+              form.querySelector('.p-cmt-send').addEventListener('click', async () => {
+                const input = form.querySelector('.p-cmt-input');
+                const text = input.value.trim();
+                if (!text) return;
+                const result = await postComment(nid, idx, text, parseInt(pi));
+                if (result) {
+                  input.value = '';
+                  showToast('评论已发表', 'success');
+                  // 刷新
+                  loadComments(nid, idx, parseInt(pi)).then(cs => {
+                    panel.querySelector('.p-cmt-form')?.remove();
+                    panel.innerHTML = cs.map(c => _renderCommentItem(c, nid, idx)).join('');
+                    // 重新添加输入框
+                    const newForm = document.createElement('div');
+                    newForm.className = 'p-cmt-form';
+                    newForm.innerHTML = `<input type="text" class="p-cmt-input" placeholder="在此段落下写评论..." /><button class="p-cmt-send">发送</button>`;
+                    panel.appendChild(newForm);
+                    newForm.querySelector('.p-cmt-send').addEventListener('click', async () => {
+                      const inp = newForm.querySelector('.p-cmt-input');
+                      const txt = inp.value.trim();
+                      if (!txt) return;
+                      const r = await postComment(nid, idx, txt, parseInt(pi));
+                      if (r) { inp.value = ''; showToast('评论已发表', 'success'); }
+                    });
+                  });
+                }
+              });
+            }
+          }
+        });
+      });
     }).catch(() => {
       readerChapterTitle.textContent = novel.chapters[idx] || '未知章节';
       readerContent.innerHTML = '<p style="color:var(--text-muted);">章节内容加载失败</p>';
@@ -1163,21 +1302,17 @@ modalOverlay.addEventListener('click', e => {
   if (e.target === modalOverlay) closeModal();
 });
 
-// --- 发表评论 ---
-commentSubmitBtn.addEventListener('click', () => {
-  if (!state.currentUser) {
-    showToast('请先登录后再评论', 'error');
-    return;
-  }
+// --- 发表评论（详情页）---
+commentSubmitBtn.addEventListener('click', async () => {
+  if (!state.currentUser) { showToast('请先登录后再评论', 'error'); return; }
   const text = commentInput.value.trim();
-  if (!text) {
-    showToast('请输入评论内容', 'error');
-    return;
+  if (!text) { showToast('请输入评论内容', 'error'); return; }
+  const result = await postComment(state.currentNovelId, 0, text);
+  if (result) {
+    commentInput.value = '';
+    renderComments(state.currentNovelId);
+    showToast('评论发表成功', 'success');
   }
-  addComment(state.currentNovelId, state.currentUser.username, text);
-  commentInput.value = '';
-  renderComments(state.currentNovelId);
-  showToast('评论发表成功', 'success');
 });
 
 // --- 键盘快捷键 ---

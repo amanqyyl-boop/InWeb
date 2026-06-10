@@ -1,10 +1,38 @@
-import os, re, json, random
+import os, re, json, random, time
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
+from flask_sqlalchemy import SQLAlchemy
 from cnn_recommender import recommend_novels, learn_from_browse
 
-app = Flask(__name__, static_folder=None)  # 不使用默认静态目录，手动配置
+app = Flask(__name__, static_folder=None)
 CORS(app)
+
+# ─── SQLite 数据库 ───
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///' + os.path.join(os.path.dirname(os.path.abspath(__file__)), 'comments.db')
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+db = SQLAlchemy(app)
+
+class Comment(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    novel_id = db.Column(db.String(20), nullable=False, index=True)
+    chapter_index = db.Column(db.Integer, nullable=False, default=0)
+    paragraph_index = db.Column(db.Integer, nullable=False, default=-1)
+    user_id = db.Column(db.Integer, nullable=False)
+    username = db.Column(db.String(100), nullable=False)
+    text = db.Column(db.Text, nullable=False)
+    parent_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=True)
+    created_at = db.Column(db.Integer, nullable=False, default=lambda: int(time.time()))
+    replies = db.relationship('Comment', backref=db.backref('parent', remote_side=[id]), lazy='dynamic', cascade='all, delete-orphan')
+
+class Vote(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    comment_id = db.Column(db.Integer, db.ForeignKey('comment.id'), nullable=False)
+    user_id = db.Column(db.Integer, nullable=False)
+    vote = db.Column(db.Integer, nullable=False)  # 1 = 赞同, -1 = 否定
+    __table_args__ = (db.UniqueConstraint('comment_id', 'user_id'),)
+
+with app.app_context():
+    db.create_all()
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 FRONTEND_DIR = os.path.join(os.path.dirname(BASE_DIR), 'frontend')
@@ -341,6 +369,70 @@ def upload_novel():
     except Exception as e:
         if os.path.exists(nd): import shutil; shutil.rmtree(nd)
         return jsonify({'error':f'上传失败: {str(e)}'}),500
+
+# ─── 评论API ───
+@app.route('/api/comments/<nid>/<int:ci>', methods=['GET'])
+def get_comments(nid, ci):
+    """获取某章节的评论，paragraph_index=-1 表示章节级评论"""
+    pi = request.args.get('pi', '-1', type=int)
+    comments = Comment.query.filter_by(novel_id=nid, chapter_index=ci, paragraph_index=pi, parent_id=None)\
+        .order_by(Comment.created_at.desc()).all()
+    return jsonify([_comment_to_dict(c) for c in comments])
+
+@app.route('/api/comments', methods=['POST'])
+def add_comment():
+    data = request.get_json()
+    uid = data.get('user_id')
+    if not uid or not _read_user(uid):
+        return jsonify({'error':'请先登录'}), 401
+    novel_id = data.get('novel_id')
+    chapter_index = data.get('chapter_index', 0)
+    paragraph_index = data.get('paragraph_index', -1)
+    text = data.get('text', '').strip()
+    parent_id = data.get('parent_id')
+    if not novel_id or not text:
+        return jsonify({'error':'参数不完整'}), 400
+    user = _read_user(uid)
+    c = Comment(novel_id=novel_id, chapter_index=chapter_index, paragraph_index=paragraph_index,
+                user_id=uid, username=user.get('用户名','匿名'), text=text, parent_id=parent_id)
+    db.session.add(c)
+    db.session.commit()
+    return jsonify(_comment_to_dict(c)), 201
+
+@app.route('/api/comments/<int:cid>/vote', methods=['POST'])
+def vote_comment(cid):
+    data = request.get_json()
+    uid = data.get('user_id')
+    vote_type = data.get('vote', 1)  # 1 赞同, -1 否定
+    if not uid or not _read_user(uid):
+        return jsonify({'error':'请先登录'}), 401
+    comment = Comment.query.get(cid)
+    if not comment:
+        return jsonify({'error':'评论不存在'}), 404
+    existing = Vote.query.filter_by(comment_id=cid, user_id=uid).first()
+    if existing:
+        if existing.vote == vote_type:
+            db.session.delete(existing)
+            db.session.commit()
+            return jsonify({'vote': 0})
+        existing.vote = vote_type
+    else:
+        v = Vote(comment_id=cid, user_id=uid, vote=vote_type)
+        db.session.add(v)
+    db.session.commit()
+    return jsonify({'vote': vote_type})
+
+def _comment_to_dict(c):
+    up = Vote.query.filter_by(comment_id=c.id, vote=1).count()
+    down = Vote.query.filter_by(comment_id=c.id, vote=-1).count()
+    replies = Comment.query.filter_by(parent_id=c.id).order_by(Comment.created_at.asc()).all()
+    return {
+        'id': c.id, 'novel_id': c.novel_id, 'chapter_index': c.chapter_index,
+        'paragraph_index': c.paragraph_index, 'user_id': c.user_id,
+        'username': c.username, 'text': c.text, 'parent_id': c.parent_id,
+        'created_at': c.created_at, 'upvotes': up, 'downvotes': down,
+        'replies': [_comment_to_dict(r) for r in replies]
+    }
 
 # ─── 启动 ───
 if not _user_exists('demo'):

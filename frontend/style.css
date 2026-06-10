@@ -242,3 +242,35 @@ body.night-mode {
 .dropzone-remove { font-size:20px; color:var(--text-muted); cursor:pointer; line-height:1; margin-left:4px; }
 .dropzone-remove:hover { color:#e74c3c; }
 .upload-progress { text-align:center; padding:12px 0; font-size:14px; color:var(--accent); }
+
+/* ─── 段落内联评论 ─── */
+.p-wrap { position:relative; }
+.p-wrap:hover .p-cmt-btn { opacity:1; }
+.p-cmt-btn { position:absolute; left:-28px; top:0; font-size:13px; color:var(--text-muted); cursor:pointer; opacity:0; transition:opacity 0.2s; padding:2px 4px; border-radius:4px; }
+.p-cmt-btn:hover { color:var(--accent); background:var(--border); }
+.p-cmt-count { font-size:10px; background:var(--accent); color:#fff; border-radius:8px; padding:0 5px; margin-left:2px; font-weight:600; }
+.p-cmts { margin:4px 0 12px 0; padding:8px 12px; background:var(--bg); border:1px solid var(--border); border-radius:var(--radius-sm); font-size:13px; }
+.p-cmt-form { display:flex; gap:6px; margin-top:8px; }
+.p-cmt-form input { flex:1; padding:6px 10px; border:1px solid var(--border); border-radius:20px; font-size:12px; background:var(--bg-card); color:var(--text-primary); outline:none; }
+.p-cmt-form input:focus { border-color:var(--accent); }
+.p-cmt-form button { padding:4px 14px; border:none; border-radius:20px; background:var(--accent); color:#fff; font-size:12px; cursor:pointer; white-space:nowrap; }
+.p-cmt-form button:hover { background:var(--accent-light); }
+
+/* ─── 评论区通用 ─── */
+.comment-item { padding:12px 0; border-bottom:1px solid var(--border); }
+.comment-item:last-child { border-bottom:none; }
+.comment-user { display:flex; align-items:center; gap:8px; margin-bottom:4px; font-size:13px; }
+.c-avatar { display:inline-flex; align-items:center; justify-content:center; width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff; font-size:11px; font-weight:600; }
+.comment-time { color:var(--text-muted); font-size:11px; margin-left:auto; }
+.comment-text { font-size:14px; line-height:1.5; margin:4px 0 6px; }
+.comment-actions { display:flex; gap:12px; font-size:12px; color:var(--text-muted); }
+.comment-actions span { cursor:pointer; display:flex; align-items:center; gap:3px; }
+.comment-actions span:hover { color:var(--accent); }
+.c-vote-active { color:var(--accent) !important; font-weight:600; }
+.c-reply-btn { cursor:pointer; }
+.c-reply-btn:hover { color:var(--accent); }
+.c-reply-form { display:none; gap:6px; margin-top:6px; }
+.c-reply-form input { flex:1; padding:4px 10px; border:1px solid var(--border); border-radius:20px; font-size:12px; background:var(--bg-card); color:var(--text-primary); outline:none; }
+.c-reply-form input:focus { border-color:var(--accent); }
+.c-reply-form button { padding:2px 12px; border:none; border-radius:20px; background:var(--accent); color:#fff; font-size:11px; cursor:pointer; }
+.comment-empty { text-align:center; padding:30px 0; color:var(--text-muted); font-size:14px; }
