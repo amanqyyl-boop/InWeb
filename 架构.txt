@@ -1,0 +1,11 @@
+project/
+├── backend/
+│   ├── app.py          # Flask 主程序
+│   ├── models.py       # 数据库模型（SQLAlchemy）
+│   ├── requirements.txt
+│   └── instance/       # 数据库文件存放位置（自动生成）
+├── frontend/
+│   ├── index.html      # 前端页面（包含 CSS 和 JS，内联或独立）
+│   ├── style.css       # （可分离）
+│   └── script.js       # （可分离）
+└── README.md
