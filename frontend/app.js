@@ -52,8 +52,9 @@ const chapterItems    = $('#chapterItems');
 const readerChapterTitle = $('#readerChapterTitle');
 const readerContent   = $('#readerContent');
 const readerChInfo    = $('#readerChInfo');
-const prevChapterBtn  = $('#prevChapter');
-const nextChapterBtn  = $('#nextChapter');
+const prevChapterBtn     = $('#prevChapter');
+const nextChapterBtn     = $('#nextChapter');
+const backToChaptersBtn  = $('#backToChapters');
 const searchInput     = $('#searchInput');
 const heroSearchInput = $('#heroSearchInput');
 const searchBtn       = $('#searchBtn');
@@ -492,11 +493,10 @@ function renderReader() {
       readerChapterTitle.textContent = title;
 
       const paragraphs = data.content.split('\n').filter(p => p.trim());
-      // 加载本章评论
-      const comments = await loadComments(nid, idx);
-      // 按段落分组
+      // 一次性加载本章所有评论，前端按段落分组
+      const allComments = await loadComments(nid, idx);
       const commentMap = {};
-      comments.forEach(c => {
+      allComments.forEach(c => {
         const pi = c.paragraph_index;
         if (!commentMap[pi]) commentMap[pi] = [];
         commentMap[pi].push(c);
@@ -504,95 +504,66 @@ function renderReader() {
 
       readerContent.innerHTML = paragraphs.map((p, pi) => {
         const pc = commentMap[pi] || [];
-        const count = pc.length;
         return `
           <div class="p-wrap">
             <p class="p-text">${p.trim()}</p>
             <div class="p-comments">
               <span class="p-cmt-btn" data-pi="${pi}">
                 <i class="fas fa-comment-dots"></i>
-                ${count ? `<span class="p-cmt-count">${count}</span>` : ''}
+                ${pc.length ? `<span class="p-cmt-count">${pc.length}</span>` : ''}
               </span>
-              <div class="p-cmts" id="pCmts-${pi}" style="display:none;"></div>
+              <div class="p-cmts" id="pCmts-${pi}" style="display:none;">
+                ${pc.length
+                  ? pc.map(c => _renderCommentItem(c, nid, idx)).join('')
+                  : '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">暂无段落评论</div>'
+                }
+              </div>
             </div>
           </div>`;
       }).join('');
 
-      // 绑定段落评论按钮
-      readerContent.querySelectorAll('.p-cmts').forEach(el => el.style.display = 'none');
-      readerContent.querySelectorAll('.p-cmnt-list').forEach(el => el.remove());
-
-      readerContent.querySelectorAll('.p-cmts').forEach(el => {
-        const pi = parseInt(el.id.replace('pCmts-', ''));
-        // 加载该段落的评论
-        loadComments(nid, idx, pi).then(cmtList => {
-          if (!cmtList.length) {
-            el.innerHTML = '<div style="font-size:12px;color:var(--text-muted);padding:4px 0;">暂无段落评论</div>';
-          } else {
-            el.innerHTML = cmtList.map(c => _renderCommentItem(c, nid, idx)).join('');
-            el.querySelectorAll('.c-reply-btn').forEach(btn => {
-              btn.addEventListener('click', () => _toggleReplyForm(btn.dataset.cid, nid, idx, el));
-            });
-            el.querySelectorAll('.c-vote-up, .c-vote-down').forEach(btn => {
-              btn.addEventListener('click', async () => {
-                await voteComment(parseInt(btn.dataset.cid), parseInt(btn.dataset.vote));
-                loadComments(nid, idx, pi).then(cs => {
-                  el.innerHTML = cs.map(c => _renderCommentItem(c, nid, idx)).join('');
-                });
-              });
-            });
-          }
-        });
-      });
-
-      // 切换段落评论面板
+      // 绑定段落评论按钮事件
       readerContent.querySelectorAll('.p-cmt-btn').forEach(btn => {
         btn.addEventListener('click', () => {
           const pi = btn.dataset.pi;
           const panel = document.getElementById(`pCmts-${pi}`);
           const isOpen = panel.style.display !== 'none';
-          // 关闭其他
           readerContent.querySelectorAll('.p-cmts').forEach(el => el.style.display = 'none');
           panel.style.display = isOpen ? 'none' : 'block';
-          if (!isOpen) {
-            // 追加输入框
-            const existingForm = panel.querySelector('.p-cmt-form');
-            if (!existingForm) {
-              const form = document.createElement('div');
-              form.className = 'p-cmt-form';
-              form.innerHTML = `
-                <input type="text" class="p-cmt-input" placeholder="在此段落下写评论..." />
-                <button class="p-cmt-send">发送</button>
-              `;
-              panel.appendChild(form);
-              form.querySelector('.p-cmt-send').addEventListener('click', async () => {
-                const input = form.querySelector('.p-cmt-input');
-                const text = input.value.trim();
-                if (!text) return;
-                const result = await postComment(nid, idx, text, parseInt(pi));
-                if (result) {
-                  input.value = '';
-                  showToast('评论已发表', 'success');
-                  // 刷新
-                  loadComments(nid, idx, parseInt(pi)).then(cs => {
-                    panel.querySelector('.p-cmt-form')?.remove();
-                    panel.innerHTML = cs.map(c => _renderCommentItem(c, nid, idx)).join('');
-                    // 重新添加输入框
-                    const newForm = document.createElement('div');
-                    newForm.className = 'p-cmt-form';
-                    newForm.innerHTML = `<input type="text" class="p-cmt-input" placeholder="在此段落下写评论..." /><button class="p-cmt-send">发送</button>`;
-                    panel.appendChild(newForm);
-                    newForm.querySelector('.p-cmt-send').addEventListener('click', async () => {
-                      const inp = newForm.querySelector('.p-cmt-input');
-                      const txt = inp.value.trim();
-                      if (!txt) return;
-                      const r = await postComment(nid, idx, txt, parseInt(pi));
-                      if (r) { inp.value = ''; showToast('评论已发表', 'success'); }
-                    });
-                  });
-                }
-              });
-            }
+          if (!isOpen && !panel.querySelector('.p-cmt-form')) {
+            const form = document.createElement('div');
+            form.className = 'p-cmt-form';
+            form.innerHTML = `<input type="text" class="p-cmt-input" placeholder="在此段落下写评论..." /><button class="p-cmt-send">发送</button>`;
+            panel.appendChild(form);
+            form.querySelector('.p-cmt-send').addEventListener('click', async () => {
+              const input = form.querySelector('.p-cmt-input');
+              const text = input.value.trim();
+              if (!text) return;
+              const result = await postComment(nid, idx, text, parseInt(pi));
+              if (result) {
+                input.value = '';
+                showToast('评论已发表', 'success');
+                loadComments(nid, idx, parseInt(pi)).then(cs => {
+                  panel.innerHTML = cs.map(c => _renderCommentItem(c, nid, idx)).join('');
+                });
+              }
+            });
+          }
+        });
+      });
+      // 绑定回复/投票事件（预渲染的评论）
+      readerContent.querySelectorAll('.c-reply-btn').forEach(btn => {
+        btn.addEventListener('click', () => _toggleReplyForm(btn.dataset.cid, nid, idx, btn.closest('.p-cmts')));
+      });
+      readerContent.querySelectorAll('.c-vote-up, .c-vote-down').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          await voteComment(parseInt(btn.dataset.cid), parseInt(btn.dataset.vote));
+          const panel = btn.closest('.p-cmts');
+          if (panel) {
+            const pi = parseInt(panel.id.replace('pCmts-', ''));
+            loadComments(nid, idx, pi).then(cs => {
+              panel.innerHTML = cs.map(c => _renderCommentItem(c, nid, idx)).join('');
+            });
           }
         });
       });
@@ -1232,6 +1203,13 @@ nextChapterBtn.addEventListener('click', () => {
       window.scrollTo(0, 0);
     }
   });
+});
+
+// --- 返回章节列表 ---
+backToChaptersBtn.addEventListener('click', () => {
+  if (state.currentNovelId) {
+    openDetail(state.currentNovelId);
+  }
 });
 
 // --- 夜间模式 ---
