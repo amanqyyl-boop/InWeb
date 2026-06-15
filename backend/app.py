@@ -110,15 +110,15 @@ def parse_info_txt(fp):
 
 def _extract_description(txt_path, author, category):
     """从小说 txt 中提取开头一小段作为简介"""
-    try:
-        with open(txt_path, 'r', encoding='utf-8') as f:
-            text = f.read(500)
-    except:
+    text = None
+    for enc in ['utf-8', 'gbk', 'utf-16']:
         try:
-            with open(txt_path, 'r', encoding='gbk') as f:
+            with open(txt_path, 'r', encoding=enc) as f:
                 text = f.read(500)
-        except:
-            return f'《{os.path.basename(txt_path).replace(".txt","")}》·{category}类作品'
+            break
+        except: continue
+    if text is None:
+        return f'《{os.path.basename(txt_path).replace(".txt","")}》·{category}类作品'
     # 去掉标题行和空行，取第一段有意义的文字
     lines = [l.strip() for l in text.split('\n') if l.strip()]
     # 过滤掉纯数字、太短的标题行
@@ -176,13 +176,14 @@ def get_novel_filepath(novel):
 
 def read_novel_file(fp):
     if not os.path.exists(fp): return None
-    try:
-        with open(fp,'r',encoding='utf-8') as f: text=f.read()
-    except:
+    text = None
+    for enc in ['utf-8', 'gbk', 'utf-16']:
         try:
-            with open(fp,'r',encoding='gbk') as f: text=f.read()
-        except: return None
-    pat = re.compile(r'(第[一二三四五六七八九十百千零\d]+[章回节部])')
+            with open(fp,'r',encoding=enc) as f: text=f.read()
+            break
+        except: continue
+    if text is None: return None
+    pat = re.compile(r'(第[一二三四五六七八九十百千零\d]+[章回节部卷])')
     parts = pat.split(text); chapters = []
     if len(parts)>1:
         cur="序章"
